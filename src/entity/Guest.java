@@ -9,6 +9,9 @@ public class Guest {
     private String loyaltyTier;        // Platinum, Diamond, Gold, Silver, Standard
     private int loyaltyPoints;
 
+    public Guest(){
+    }
+    
     public Guest(String guestName, String confirmationNumber, String loyaltyTier, int loyaltyPoints) {
         this.guestName = guestName;
         this.confirmationNumber = confirmationNumber;
