@@ -9,6 +9,9 @@ public class Room {
     private String roomStatus; // Dirty, Cleaning In Progress, Inspected, Ready for Check-In
     private double price;
 
+    public Room(){
+    }
+    
     public Room(String roomNumber, String roomType, String roomStatus, double price) {
         this.roomNumber = roomNumber;
         this.roomType = roomType;
