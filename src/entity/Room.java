@@ -1,12 +1,13 @@
 package entity;
 
 /**
- * @Weisheng
+ * Author: Weisheng
+ * Entity class representing a Resort Room
  */
 public class Room {
     private String roomNumber;
-    private String roomType;   // Deluxe, Suite, Standard
-    private String roomStatus; // Dirty, Cleaning In Progress, Inspected, Ready for Check-In
+    private String roomType;   // Deluxe Suite, Presidential Suite, Standard Room
+    private String roomStatus; // Dirty, Cleaning In Progress, Inspected, Ready for Check-In, Occupied
     private double price;
 
     public Room(String roomNumber, String roomType, String roomStatus, double price) {

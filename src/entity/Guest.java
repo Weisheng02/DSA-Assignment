@@ -1,12 +1,13 @@
 package entity;
 
 /**
- * @Weisheng
+ * Author: Weisheng
+ * Entity class representing a Resort Guest
  */
 public class Guest {
     private String guestName;
     private String confirmationNumber; // 8-digit unique ID
-    private String loyaltyTier;        // Platinum, Diamond, Gold, Silver, Standard
+    private String loyaltyTier;        // Platinum, Gold, Silver, Standard
     private int loyaltyPoints;
 
     public Guest(String guestName, String confirmationNumber, String loyaltyTier, int loyaltyPoints) {

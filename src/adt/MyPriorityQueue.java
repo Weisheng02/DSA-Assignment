@@ -1,75 +1,52 @@
 package adt;
 
 /**
- * @Weisheng
- * @param <T> The type of elements held in this collection
+ * Author: Weisheng
+ * Array-based Priority Queue Collection ADT Implementation
  */
-public class MyPriorityQueue<T> implements PriorityQueueInterface<T> {
-
-    private class Node {
-        private T data;
-        private int priority;
-        private Node next;
-
-        private Node(T data, int priority) {
-            this.data = data;
-            this.priority = priority;
-            this.next = null;
-        }
-    }
-
-    private Node firstNode;
+public class MyPriorityQueue<T extends Comparable<T>> implements PriorityQueueInterface<T> {
+    private T[] array;
     private int numberOfEntries;
+    private static final int DEFAULT_CAPACITY = 25;
 
+    @SuppressWarnings("unchecked")
     public MyPriorityQueue() {
-        this.firstNode = null;
-        this.numberOfEntries = 0;
+        array = (T[]) new Comparable[DEFAULT_CAPACITY];
+        numberOfEntries = 0;
     }
 
     @Override
-    public boolean enqueue(T element, int priority) {
-        if (element == null) {
-            return false;
+    public boolean enqueue(T newEntry) {
+        if (numberOfEntries >= array.length) {
+            doubleCapacity();
         }
 
-        Node newNode = new Node(element, priority);
-
-        // Case 1: Queue is empty OR the new node has higher priority than the head node
-        if (isEmpty() || priority > firstNode.priority) {
-            newNode.next = firstNode;
-            firstNode = newNode;
-        } else {
-            // Case 2: Traverse the queue to find the correct insertion position
-            Node currentNode = firstNode;
-            while (currentNode.next != null && currentNode.next.priority >= priority) {
-                currentNode = currentNode.next;
-            }
-            newNode.next = currentNode.next;
-            currentNode.next = newNode;
+        int index = numberOfEntries - 1;
+        while (index >= 0 && newEntry.compareTo(array[index]) > 0) {
+            array[index + 1] = array[index];
+            index--;
         }
-
+        array[index + 1] = newEntry;
         numberOfEntries++;
         return true;
     }
 
     @Override
     public T dequeue() {
-        if (isEmpty()) {
-            return null;
+        if (isEmpty()) return null;
+        T front = array[0];
+        for (int i = 0; i < numberOfEntries - 1; i++) {
+            array[i] = array[i + 1];
         }
-
-        T highestPriorityData = firstNode.data;
-        firstNode = firstNode.next;
+        array[numberOfEntries - 1] = null;
         numberOfEntries--;
-        return highestPriorityData;
+        return front;
     }
 
     @Override
-    public T peek() {
-        if (isEmpty()) {
-            return null;
-        }
-        return firstNode.data;
+    public T getFront() {
+        if (isEmpty()) return null;
+        return array[0];
     }
 
     @Override
@@ -78,13 +55,22 @@ public class MyPriorityQueue<T> implements PriorityQueueInterface<T> {
     }
 
     @Override
-    public int size() {
-        return numberOfEntries;
+    public void clear() {
+        for (int i = 0; i < numberOfEntries; i++) {
+            array[i] = null;
+        }
+        numberOfEntries = 0;
     }
 
     @Override
-    public void clear() {
-        firstNode = null;
-        numberOfEntries = 0;
+    public int getNumberOfEntries() {
+        return numberOfEntries;
+    }
+
+    @SuppressWarnings("unchecked")
+    private void doubleCapacity() {
+        T[] oldArray = array;
+        array = (T[]) new Comparable[oldArray.length * 2];
+        System.arraycopy(oldArray, 0, array, 0, oldArray.length);
     }
 }
