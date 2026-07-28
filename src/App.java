@@ -40,7 +40,7 @@ public class App {
                     new HousekeepingUI().displayMenu();
                     break;
                 case 3:
-                    new FrontDeskUI().displayMenu();
+                    new FrontDeskUI().displayMenu(scanner);
                     break;
                 case 4:
                     new LoyaltyUI().displayMenu();

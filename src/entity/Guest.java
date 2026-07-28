@@ -4,7 +4,7 @@ package entity;
  * Author: Weisheng
  * Entity class representing a Resort Guest
  */
-public class Guest {
+public class Guest implements Comparable<Guest> {
     private String guestName;
     private String confirmationNumber; // 8-digit unique ID
     private String loyaltyTier;        // Platinum, Gold, Silver, Standard
@@ -33,6 +33,13 @@ public class Guest {
     public void setLoyaltyPoints(int loyaltyPoints) { this.loyaltyPoints = loyaltyPoints; }
 
     @Override
+    public int compareTo(Guest other) {
+        if (other == null || other.confirmationNumber == null) return 1;
+        if (this.confirmationNumber == null) return -1;
+        return this.confirmationNumber.compareToIgnoreCase(other.confirmationNumber);
+    }
+
+    @Override
     public String toString() {
         return "Guest{" +
                 "Name='" + guestName + '\'' +
@@ -42,3 +49,4 @@ public class Guest {
                 '}';
     }
 }
+

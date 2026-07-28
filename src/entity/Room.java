@@ -4,7 +4,7 @@ package entity;
  * Author: Weisheng
  * Entity class representing a Resort Room
  */
-public class Room {
+public class Room implements Comparable<Room> {
     private String roomNumber;
     private String roomType;   // Deluxe Suite, Presidential Suite, Standard Room
     private String roomStatus; // Dirty, Cleaning In Progress, Inspected, Ready for Check-In, Occupied
@@ -33,6 +33,13 @@ public class Room {
     public void setPrice(double price) { this.price = price; }
 
     @Override
+    public int compareTo(Room other) {
+        if (other == null || other.roomNumber == null) return 1;
+        if (this.roomNumber == null) return -1;
+        return this.roomNumber.compareToIgnoreCase(other.roomNumber);
+    }
+
+    @Override
     public String toString() {
         return "Room{" +
                 "RoomNo='" + roomNumber + '\'' +
@@ -42,3 +49,4 @@ public class Room {
                 '}';
     }
 }
+

@@ -20,7 +20,15 @@ public class FrontDeskUI {
     }
 
     public void displayMenu() {
+        displayMenu(this.scanner);
+    }
+
+    public void displayMenu(Scanner scanner) {
+        if (scanner != null) {
+            this.scanner = scanner;
+        }
         int choice = -1;
+
         do {
             System.out.println("\n--------------------------------------------------");
             System.out.println("            FRONT DESK MANAGEMENT SYSTEM          ");
@@ -178,7 +186,8 @@ public class FrontDeskUI {
         System.out.println("==================================================");
     }
 
-    // Reports Submenu to fulfill "At least two reports with searching, sorting & filtering" requirement
+    // Reports Submenu to fulfill "At least two reports with searching, sorting &
+    // filtering" requirement
     private void displayReportsSubmenu() {
         int reportChoice = -1;
         do {
@@ -235,7 +244,8 @@ public class FrontDeskUI {
     // Report 2: Multi-Criteria Filtered & Sorted Room Price Report
     private void displayReport2() {
         System.out.println("\n--- REPORT 2: FILTERED & SORTED ROOM PRICE ANALYSIS ---");
-        System.out.print("Enter Room Status filter (Ready for Check-In / Dirty / Occupied / Cleaning In Progress / ALL): ");
+        System.out.print(
+                "Enter Room Status filter (Ready for Check-In / Dirty / Occupied / Cleaning In Progress / ALL): ");
         String statusFilter = scanner.nextLine().trim();
 
         System.out.print("Enter Maximum Room Price per night (Enter 0 for no limit): ");
