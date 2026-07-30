@@ -2,8 +2,8 @@ package adt;
 
 /**
  * Author: Weisheng
- * Non-Linear Data Structure Implementation: Binary Search Tree (BST)
- * Supports O(log n) Tree Searching and In-Order Traversal.
+ * Array-based Binary Search Tree implementation.
+ * Supports searching, insertion, deletion, range search, and traversal.
  */
 public class BinarySearchTree<T extends Comparable<T>> implements BSTInterface<T> {
 
@@ -49,7 +49,59 @@ public class BinarySearchTree<T extends Comparable<T>> implements BSTInterface<T
         return currentNode;
     }
 
-    // Non-linear BST Search Algorithm O(log n)
+    @Override
+    public T remove(T entry) {
+        if (entry == null || root == null) return null;
+
+        // Use an array to hold the removed value since Java can't return multiple values
+        @SuppressWarnings("unchecked")
+        T[] removedValue = (T[]) new Comparable[1];
+        root = removeNode(root, entry, removedValue);
+        if (removedValue[0] != null) {
+            numberOfEntries--;
+        }
+        return removedValue[0];
+    }
+
+    private Node<T> removeNode(Node<T> currentNode, T entry, T[] removedValue) {
+        if (currentNode == null) {
+            return null;
+        }
+
+        int comp = entry.compareTo(currentNode.data);
+        if (comp < 0) {
+            currentNode.left = removeNode(currentNode.left, entry, removedValue);
+        } else if (comp > 0) {
+            currentNode.right = removeNode(currentNode.right, entry, removedValue);
+        } else {
+            // Found the node to remove
+            removedValue[0] = currentNode.data;
+
+            // Case 1: leaf or only one child
+            if (currentNode.left == null) {
+                return currentNode.right;
+            } else if (currentNode.right == null) {
+                return currentNode.left;
+            }
+
+            // Case 2: two children -> replace with in-order successor
+            T successor = findMinValue(currentNode.right);
+            currentNode.data = successor;
+            @SuppressWarnings("unchecked")
+            T[] temp = (T[]) new Comparable[1];
+            currentNode.right = removeNode(currentNode.right, successor, temp);
+        }
+        return currentNode;
+    }
+
+    // Go all the way left to find the smallest value
+    private T findMinValue(Node<T> node) {
+        while (node.left != null) {
+            node = node.left;
+        }
+        return node.data;
+    }
+
     @Override
     public T search(T entry) {
         if (entry == null || root == null) return null;
@@ -74,6 +126,68 @@ public class BinarySearchTree<T extends Comparable<T>> implements BSTInterface<T
     @Override
     public boolean contains(T entry) {
         return search(entry) != null;
+    }
+
+    @Override
+    public ListInterface<T> rangeSearch(T minEntry, T maxEntry) {
+        ListInterface<T> result = new MyArrayList<>();
+        if (minEntry == null || maxEntry == null || root == null) return result;
+        rangeSearchHelper(root, minEntry, maxEntry, result);
+        return result;
+    }
+
+    private void rangeSearchHelper(Node<T> node, T minEntry, T maxEntry, ListInterface<T> result) {
+        if (node == null) return;
+
+        int cmpMin = minEntry.compareTo(node.data);
+        int cmpMax = maxEntry.compareTo(node.data);
+
+        // Only go left if current node might have values >= minEntry
+        if (cmpMin < 0) {
+            rangeSearchHelper(node.left, minEntry, maxEntry, result);
+        }
+
+        // Add node if it's within range
+        if (cmpMin <= 0 && cmpMax >= 0) {
+            result.add(node.data);
+        }
+
+        // Only go right if current node might have values <= maxEntry
+        if (cmpMax > 0) {
+            rangeSearchHelper(node.right, minEntry, maxEntry, result);
+        }
+    }
+
+    @Override
+    public T getMin() {
+        if (root == null) return null;
+        Node<T> current = root;
+        while (current.left != null) {
+            current = current.left;
+        }
+        return current.data;
+    }
+
+    @Override
+    public T getMax() {
+        if (root == null) return null;
+        Node<T> current = root;
+        while (current.right != null) {
+            current = current.right;
+        }
+        return current.data;
+    }
+
+    @Override
+    public int getHeight() {
+        return calcHeight(root);
+    }
+
+    private int calcHeight(Node<T> node) {
+        if (node == null) return 0;
+        int left = calcHeight(node.left);
+        int right = calcHeight(node.right);
+        return 1 + Math.max(left, right);
     }
 
     @Override

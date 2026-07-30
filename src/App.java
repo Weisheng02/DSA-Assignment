@@ -34,10 +34,10 @@ public class App {
             System.out.println();
             switch (choice) {
                 case 1:
-                    new BookingUI().displayMenu();
+                    new BookingUI().displayMenu(scanner);
                     break;
                 case 2:
-                    new HousekeepingUI().displayMenu();
+                    new HousekeepingUI().displayMenu(scanner);
                     break;
                 case 3:
                     new FrontDeskUI().displayMenu(scanner);
