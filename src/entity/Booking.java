@@ -1,7 +1,7 @@
 package entity;
 
 /**
- * Author: Weisheng
+ * Author: Zhixuan
  * Entity class representing a Guest Booking / Reservation
  */
 public class Booking {
