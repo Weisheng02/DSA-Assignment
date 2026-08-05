@@ -16,10 +16,30 @@ public class FrontDeskController {
     private BSTInterface<Guest> guestTree;
     private BSTInterface<Room> roomTree;
 
+    private ListInterface<Room> sharedRoomList;
+
     public FrontDeskController() {
-        guestTree = new BinarySearchTree<>();
-        roomTree = new BinarySearchTree<>();
-        seedInitialData();
+        this(null, null);
+    }
+
+    public FrontDeskController(BSTInterface<Guest> masterGuestTree, ListInterface<Room> sharedRoomList) {
+        this.guestTree = (masterGuestTree != null) ? masterGuestTree : new BinarySearchTree<>();
+        this.roomTree = new BinarySearchTree<>();
+        this.sharedRoomList = sharedRoomList;
+        if (masterGuestTree == null && sharedRoomList == null) {
+            seedInitialData();
+        } else {
+            syncRoomTree();
+        }
+    }
+
+    public void syncRoomTree() {
+        if (sharedRoomList != null) {
+            roomTree.clear();
+            for (int i = 0; i < sharedRoomList.getNumberOfEntries(); i++) {
+                roomTree.add(sharedRoomList.get(i));
+            }
+        }
     }
 
     private void seedInitialData() {
@@ -95,24 +115,93 @@ public class FrontDeskController {
     }
 
     public ListInterface<Room> getAllRooms() {
+        syncRoomTree();
         return roomTree.inOrderTraversal();
     }
 
-    // Process check-in: returns 1=success, -1=guest not found, -2=room not found, -3=room not ready
+    private ListInterface<String> activeCheckedInConfirmations = new MyArrayList<>();
+
+    // Process check-in: returns 1=success, -1=guest not found, -2=room not found, -3=room not ready, -4=guest already checked-in
     public int processCheckIn(String confirmationNumber, String roomNumber) {
+        Room r = searchRoomByNumber(roomNumber);
+        double price = (r != null) ? r.getPrice() : 0.0;
+        return processCheckIn(confirmationNumber, roomNumber, price);
+    }
+
+    public int processCheckIn(String confirmationNumber, String roomNumber, double baseRoomPrice) {
+        syncRoomTree();
         Guest guest = searchGuestByConfirmationNumber(confirmationNumber);
         if (guest == null)
             return -1;
+
+        // Double Lock: Check both active list AND Guest entity's checkedIn flag
+        if (guest.isCheckedIn()) {
+            return -4;
+        }
+
+        for (int i = 0; i < activeCheckedInConfirmations.getNumberOfEntries(); i++) {
+            if (activeCheckedInConfirmations.get(i).equalsIgnoreCase(confirmationNumber.trim())) {
+                return -4;
+            }
+        }
 
         Room room = searchRoomByNumber(roomNumber);
         if (room == null)
             return -2;
 
-        if (!"Ready for Check-In".equalsIgnoreCase(room.getRoomStatus())) {
+        String currentStatus = room.getRoomStatus();
+        if (!"Ready for Check-In".equalsIgnoreCase(currentStatus) && !"Reserved".equalsIgnoreCase(currentStatus)) {
             return -3;
         }
 
+        // Validate that if a room is Reserved, it must be reserved for THIS guest
+        if ("Reserved".equalsIgnoreCase(currentStatus)) {
+            if (guest.getAssignedRoomNumber() == null || !guest.getAssignedRoomNumber().equalsIgnoreCase(roomNumber.trim())) {
+                return -5; // Room is reserved for another guest
+            }
+        }
+
         room.setRoomStatus("Occupied");
+        guest.setCheckedIn(true);
+        guest.setAssignedRoomNumber(roomNumber);
+        guest.setEffectiveRoomRate(baseRoomPrice > 0 ? baseRoomPrice : room.getPrice());
+        activeCheckedInConfirmations.add(confirmationNumber.trim());
+        return 1;
+    }
+
+    /**
+     * Process Guest Check-Out:
+     * Sets room status to "Dirty" for Housekeeping, resets guest checked-in state,
+     * and removes guest from active checked-in list.
+     * @return 1: success, -1: guest not found, -2: guest not checked-in
+     */
+    public int processCheckOut(String confirmationNumber) {
+        if (confirmationNumber == null || confirmationNumber.trim().isEmpty()) return -1;
+        Guest guest = searchGuestByConfirmationNumber(confirmationNumber);
+        if (guest == null) return -1;
+        if (!guest.isCheckedIn()) return -2;
+
+        String roomNo = guest.getAssignedRoomNumber();
+        if (roomNo != null) {
+            Room room = searchRoomByNumber(roomNo);
+            if (room != null) {
+                room.setRoomStatus("Dirty");
+            }
+        }
+
+        guest.setCheckedIn(false);
+        guest.setAssignedRoomNumber(null);
+        guest.setEffectiveRoomRate(0.0);
+
+        // Remove confirmation from active checked in list
+        ListInterface<String> updatedActive = new MyArrayList<>();
+        for (int i = 0; i < activeCheckedInConfirmations.getNumberOfEntries(); i++) {
+            String c = activeCheckedInConfirmations.get(i);
+            if (!c.equalsIgnoreCase(confirmationNumber.trim())) {
+                updatedActive.add(c);
+            }
+        }
+        activeCheckedInConfirmations = updatedActive;
         return 1;
     }
 
@@ -151,21 +240,75 @@ public class FrontDeskController {
         }
     }
 
-    // Get BST tree stats for the diagnostics display
+    // Advanced BST Diagnostic & Rebalance Methods
+    public void rebalanceTrees() {
+        guestTree.rebalance();
+        roomTree.rebalance();
+    }
+
+    public boolean isGuestTreeBalanced() {
+        return guestTree.isBalanced();
+    }
+
+    public void printGuestTreeStructure() {
+        System.out.println("\n=== Guest BST ASCII Visualizer ===");
+        guestTree.printTree();
+    }
+
+    public void printRoomTreeStructure() {
+        System.out.println("\n=== Room BST ASCII Visualizer ===");
+        roomTree.printTree();
+    }
+
+    public ListInterface<Guest> getGuestTraversal(int mode) {
+        switch (mode) {
+            case 1:
+                return guestTree.inOrderTraversal();
+            case 2:
+                return guestTree.preOrderTraversal();
+            case 3:
+                return guestTree.postOrderTraversal();
+            default:
+                return guestTree.inOrderTraversal();
+        }
+    }
+
+    // Comprehensive diagnostics report array
     public String[] getGuestTreeDiagnostics() {
-        String[] stats = new String[4];
+        String[] stats = new String[6];
         stats[0] = String.valueOf(guestTree.getNumberOfEntries());
         stats[1] = String.valueOf(guestTree.getHeight());
+        stats[2] = String.valueOf(guestTree.getLeafCount());
+        stats[3] = guestTree.isBalanced() ? "Balanced (Balanced Height)" : "Unbalanced";
         Guest minGuest = guestTree.getMin();
         Guest maxGuest = guestTree.getMax();
-        stats[2] = (minGuest != null) ? minGuest.getConfirmationNumber() + " (" + minGuest.getGuestName() + ")" : "N/A";
-        stats[3] = (maxGuest != null) ? maxGuest.getConfirmationNumber() + " (" + maxGuest.getGuestName() + ")" : "N/A";
+        stats[4] = (minGuest != null) ? minGuest.getConfirmationNumber() + " (" + minGuest.getGuestName() + ")" : "N/A";
+        stats[5] = (maxGuest != null) ? maxGuest.getConfirmationNumber() + " (" + maxGuest.getGuestName() + ")" : "N/A";
         return stats;
+    }
+
+    // Revenue and Occupancy Analytics
+    public double calculateOccupancyRate() {
+        int[] summary = getRoomStatusSummary();
+        if (summary[0] == 0) return 0.0;
+        return ((double) summary[2] / summary[0]) * 100.0; // summary[2] is Occupied count
+    }
+
+    public double calculateEstimatedDailyRevenue() {
+        ListInterface<Room> rooms = roomTree.inOrderTraversal();
+        double totalRevenue = 0.0;
+        for (int i = 0; i < rooms.getNumberOfEntries(); i++) {
+            Room r = rooms.get(i);
+            if ("Occupied".equalsIgnoreCase(r.getRoomStatus())) {
+                totalRevenue += r.getPrice();
+            }
+        }
+        return totalRevenue;
     }
 
     // Report 1: Room status summary
     public int[] getRoomStatusSummary() {
-        int[] summary = new int[5]; // Total, Ready, Occupied, Dirty, Cleaning
+        int[] summary = new int[6]; // Total, Ready, Occupied, Dirty, Cleaning, Reserved
         ListInterface<Room> rooms = roomTree.inOrderTraversal();
         summary[0] = rooms.getNumberOfEntries();
 
@@ -179,6 +322,8 @@ public class FrontDeskController {
                 summary[3]++;
             else if ("Cleaning In Progress".equalsIgnoreCase(status))
                 summary[4]++;
+            else if ("Reserved".equalsIgnoreCase(status))
+                summary[5]++;
         }
         return summary;
     }

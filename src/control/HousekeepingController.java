@@ -10,7 +10,7 @@ import entity.Room;
 import java.util.Comparator;
 
 /**
- * Author: [Your Name Here]
+ * Author: Kai Wei
  * Controller Class for Housekeeping & Task Log Operations (Linear ADT: Stack).
  *
  * Room statuses move forward through a fixed sequence:
@@ -29,9 +29,13 @@ public class HousekeepingController {
     private StackInterface<HousekeepingLog> taskLogStack;
 
     public HousekeepingController() {
-        roomList = new MyArrayList<>();
-        taskLogStack = new ArrayStack<>();
+        this(new MyArrayList<>());
         seedInitialData();
+    }
+
+    public HousekeepingController(ListInterface<Room> sharedRoomList) {
+        this.roomList = (sharedRoomList != null) ? sharedRoomList : new MyArrayList<>();
+        this.taskLogStack = new ArrayStack<>();
     }
 
     // Populate this module's own working data, since the team's modules are not yet integrated.

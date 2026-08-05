@@ -1,5 +1,6 @@
 package boundary;
 
+import adt.BSTInterface;
 import adt.ListInterface;
 import control.BookingController;
 import entity.Booking;
@@ -9,7 +10,7 @@ import entity.Room;
 import java.util.Scanner;
 
 /**
- * Author: Weisheng
+ * Author: Zhi Xuan
  * Boundary Class for Walk-In Registrations & Booking Module
  */
 public class BookingUI {
@@ -17,7 +18,15 @@ public class BookingUI {
     private Scanner scanner;
 
     public BookingUI() {
-        controller = new BookingController();
+        this(new BookingController());
+    }
+
+    public BookingUI(BookingController controller) {
+        this.controller = (controller != null) ? controller : new BookingController();
+    }
+
+    public BookingUI(ListInterface<Room> sharedRoomList, BSTInterface<Guest> masterGuestRegistry) {
+        this(new BookingController(sharedRoomList, masterGuestRegistry));
     }
 
     public void displayMenu() {
@@ -47,15 +56,32 @@ public class BookingUI {
             System.out.println();
 
             switch (choice) {
-                case 1: handleRegisterWalkIn(); break;
-                case 2: handleViewWaitingQueue(); break;
-                case 3: handleProcessNextGuest(); break;
-                case 4: handleViewAllBookings(); break;
-                case 5: handleCancelBooking(); break;
-                case 6: displayReport1(); break;
-                case 7: displayReport2(); break;
-                case 0: System.out.println("Returning to main menu..."); break;
-                default: System.out.println("Invalid selection. Please enter a number between 0 and 7.");
+                case 1:
+                    handleRegisterWalkIn();
+                    break;
+                case 2:
+                    handleViewWaitingQueue();
+                    break;
+                case 3:
+                    handleProcessNextGuest();
+                    break;
+                case 4:
+                    handleViewAllBookings();
+                    break;
+                case 5:
+                    handleCancelBooking();
+                    break;
+                case 6:
+                    displayReport1();
+                    break;
+                case 7:
+                    displayReport2();
+                    break;
+                case 0:
+                    System.out.println("Returning to main menu...");
+                    break;
+                default:
+                    System.out.println("Invalid selection. Please enter a number between 0 and 7.");
             }
         } while (choice != 0);
     }
@@ -79,10 +105,18 @@ public class BookingUI {
 
         String tier;
         switch (tierChoice) {
-            case 1: tier = "Platinum"; break;
-            case 2: tier = "Gold"; break;
-            case 3: tier = "Silver"; break;
-            default: tier = "Standard"; break;
+            case 1:
+                tier = "Platinum";
+                break;
+            case 2:
+                tier = "Gold";
+                break;
+            case 3:
+                tier = "Silver";
+                break;
+            default:
+                tier = "Standard";
+                break;
         }
 
         Guest newGuest = controller.registerWalkInGuest(name, tier);
@@ -202,16 +236,20 @@ public class BookingUI {
     private void handleViewAllBookings() {
         ListInterface<Booking> bookings = controller.getAllBookings();
 
-        System.out.println("\n=============================================================================================");
-        System.out.println("                            ALL BOOKING RECORDS                                              ");
-        System.out.println("=============================================================================================");
+        System.out.println(
+                "\n=============================================================================================");
+        System.out.println(
+                "                            ALL BOOKING RECORDS                                              ");
+        System.out.println(
+                "=============================================================================================");
 
         if (bookings.isEmpty()) {
             System.out.println(" No bookings found.");
         } else {
             System.out.printf("%-8s | %-12s | %-12s | %-8s | %-16s | %-6s | %-10s | %-10s\n",
                     "ID", "Guest", "Confirm No", "Room", "Type", "Nights", "Total(RM)", "Status");
-            System.out.println("---------------------------------------------------------------------------------------------");
+            System.out.println(
+                    "---------------------------------------------------------------------------------------------");
             for (int i = 0; i < bookings.getNumberOfEntries(); i++) {
                 Booking b = bookings.get(i);
                 System.out.printf("%-8s | %-12s | %-12s | %-8s | %-16s | %-6d | %10.2f | %-10s\n",
@@ -225,7 +263,8 @@ public class BookingUI {
                         b.getBookingStatus());
             }
         }
-        System.out.println("=============================================================================================");
+        System.out.println(
+                "=============================================================================================");
     }
 
     private void handleCancelBooking() {
@@ -266,16 +305,19 @@ public class BookingUI {
         ListInterface<Booking> filtered = controller.getFilteredAndSortedBookings(
                 typeFilter, minNights, ascending);
 
-        System.out.println("\n=============================================================================================");
+        System.out.println(
+                "\n=============================================================================================");
         System.out.printf(" REPORT RESULTS: %d booking(s) match criteria\n", filtered.getNumberOfEntries());
-        System.out.println("=============================================================================================");
+        System.out.println(
+                "=============================================================================================");
 
         if (filtered.isEmpty()) {
             System.out.println(" No bookings match the specified criteria.");
         } else {
             System.out.printf("%-8s | %-12s | %-8s | %-16s | %-12s | %-6s | %-10s | %-10s\n",
                     "ID", "Guest", "Room", "Type", "Check-In", "Nights", "Total(RM)", "Status");
-            System.out.println("---------------------------------------------------------------------------------------------");
+            System.out.println(
+                    "---------------------------------------------------------------------------------------------");
 
             double grandTotal = 0;
             for (int i = 0; i < filtered.getNumberOfEntries(); i++) {
@@ -293,10 +335,12 @@ public class BookingUI {
                     grandTotal += b.getTotalPrice();
                 }
             }
-            System.out.println("---------------------------------------------------------------------------------------------");
+            System.out.println(
+                    "---------------------------------------------------------------------------------------------");
             System.out.printf(" Grand Total (Confirmed only): RM %.2f\n", grandTotal);
         }
-        System.out.println("=============================================================================================");
+        System.out.println(
+                "=============================================================================================");
     }
 
     private void displayReport2() {
@@ -353,7 +397,6 @@ public class BookingUI {
         System.out.println("==================================================");
     }
 
-
     private boolean isInList(String confirmNo, ListInterface<Guest> list) {
         for (int i = 0; i < list.getNumberOfEntries(); i++) {
             if (list.get(i).getConfirmationNumber().equals(confirmNo)) {
@@ -364,7 +407,8 @@ public class BookingUI {
     }
 
     private String truncate(String text, int maxLen) {
-        if (text == null) return "";
+        if (text == null)
+            return "";
         return text.length() <= maxLen ? text : text.substring(0, maxLen - 2) + "..";
     }
 
@@ -382,7 +426,8 @@ public class BookingUI {
     private int readPositiveIntInput() {
         while (true) {
             int val = readIntInput();
-            if (val > 0) return val;
+            if (val > 0)
+                return val;
             System.out.print("Value must be greater than 0. Please enter again: ");
         }
     }

@@ -1,6 +1,7 @@
 package control;
 
 import adt.ArrayQueue;
+import adt.BSTInterface;
 import adt.ListInterface;
 import adt.MyArrayList;
 import adt.QueueInterface;
@@ -10,7 +11,7 @@ import entity.Room;
 import java.util.Comparator;
 
 /**
- * Author: Weisheng
+ * Author: Zhi Xuan
  * Controller for Walk-In Registrations & Standard Booking.
  * Uses Queue (FIFO) to manage incoming guests.
  */
@@ -20,22 +21,34 @@ public class BookingController {
     private ListInterface<Booking> bookingList;
     private ListInterface<Guest> registeredGuests;
     private ListInterface<Room> roomList;
+    private BSTInterface<Guest> masterGuestRegistry;
     private int nextConfirmationNumber;
     private int nextBookingId;
 
     public BookingController() {
-        waitingQueue = new ArrayQueue<>();
-        bookingList = new MyArrayList<>();
-        registeredGuests = new MyArrayList<>();
-        roomList = new MyArrayList<>();
-        nextConfirmationNumber = 20000001; // Start from 20000001 to avoid clash with FrontDesk data
-        nextBookingId = 1;
-        seedInitialData();
+        this(null, null, null);
     }
 
-    // Load initial sample data
-    private void seedInitialData() {
-        // Seed rooms (same set as other modules for consistency)
+    public BookingController(ListInterface<Room> sharedRoomList, BSTInterface<Guest> masterGuestRegistry) {
+        this(sharedRoomList, null, masterGuestRegistry);
+    }
+
+    public BookingController(ListInterface<Room> sharedRoomList, ListInterface<Guest> sharedRegisteredGuests,
+            BSTInterface<Guest> masterGuestRegistry) {
+        waitingQueue = new ArrayQueue<>();
+        bookingList = new MyArrayList<>();
+        registeredGuests = (sharedRegisteredGuests != null) ? sharedRegisteredGuests : new MyArrayList<>();
+        roomList = (sharedRoomList != null) ? sharedRoomList : new MyArrayList<>();
+        this.masterGuestRegistry = masterGuestRegistry;
+        nextConfirmationNumber = 20000001;
+        nextBookingId = 1;
+        if (sharedRoomList == null) {
+            seedRooms();
+        }
+        seedInitialQueueGuests();
+    }
+
+    private void seedRooms() {
         roomList.add(new Room("101", "Deluxe Suite", "Ready for Check-In", 350.00));
         roomList.add(new Room("102", "Presidential Suite", "Dirty", 800.00));
         roomList.add(new Room("103", "Standard Room", "Ready for Check-In", 180.00));
@@ -43,30 +56,42 @@ public class BookingController {
         roomList.add(new Room("105", "Standard Room", "Cleaning In Progress", 180.00));
         roomList.add(new Room("201", "Presidential Suite", "Ready for Check-In", 950.00));
         roomList.add(new Room("202", "Deluxe Suite", "Ready for Check-In", 400.00));
+    }
 
-        // Seed some walk-in guests already in the waiting queue
+    private void seedInitialQueueGuests() {
+        if (!waitingQueue.isEmpty()) return;
+
         Guest g1 = new Guest("Sarah Chen", "20000001", "Silver", 150);
         Guest g2 = new Guest("James Ong", "20000002", "Standard", 30);
         Guest g3 = new Guest("Linda Tan", "20000003", "Gold", 620);
+
         waitingQueue.enqueue(g1);
         waitingQueue.enqueue(g2);
         waitingQueue.enqueue(g3);
+
         registeredGuests.add(g1);
         registeredGuests.add(g2);
         registeredGuests.add(g3);
+
+        if (masterGuestRegistry != null) {
+            masterGuestRegistry.add(g1);
+            masterGuestRegistry.add(g2);
+            masterGuestRegistry.add(g3);
+        }
+
         nextConfirmationNumber = 20000004;
 
-        // Seed one existing booking (Room 104 is already Occupied)
-        bookingList.add(new Booking("BK0001", "10000001", "Alice Tan",
-                "104", "Deluxe Suite", 350.00, "2026-07-28", 3));
-        nextBookingId = 2;
+        if (bookingList.isEmpty()) {
+            bookingList.add(new Booking("BK0001", "10000001", "Alice Tan",
+                    "104", "Deluxe Suite", 350.00, "2026-07-28", 3));
+            nextBookingId = 2;
+        }
     }
-
-
 
     /**
      * Register a new walk-in guest and add to the waiting queue.
      * Auto-generates an 8-digit confirmation number.
+     * 
      * @return The newly registered Guest object.
      */
     public Guest registerWalkInGuest(String guestName, String loyaltyTier) {
@@ -74,6 +99,10 @@ public class BookingController {
         Guest newGuest = new Guest(guestName, confirmNo, loyaltyTier, 0);
         waitingQueue.enqueue(newGuest);
         registeredGuests.add(newGuest);
+        // Sync to Master Guest Registry so FrontDesk & Loyalty can see this guest
+        if (masterGuestRegistry != null) {
+            masterGuestRegistry.add(newGuest);
+        }
         return newGuest;
     }
 
@@ -99,8 +128,6 @@ public class BookingController {
         return waitingQueue.getNumberOfEntries();
     }
 
-
-
     /**
      * Process the next guest in the waiting queue:
      * 1. Dequeue the front guest
@@ -111,11 +138,14 @@ public class BookingController {
      * @return 1: success, -1: queue empty, -2: room not found, -3: room not ready
      */
     public int processNextGuest(String roomNumber, String checkInDate, int numberOfNights) {
-        if (waitingQueue.isEmpty()) return -1;
+        if (waitingQueue.isEmpty())
+            return -1;
 
         Room room = findRoomByNumber(roomNumber);
-        if (room == null) return -2;
-        if (!"Ready for Check-In".equalsIgnoreCase(room.getRoomStatus())) return -3;
+        if (room == null)
+            return -2;
+        if (!"Ready for Check-In".equalsIgnoreCase(room.getRoomStatus()))
+            return -3;
 
         // Dequeue the front guest
         Guest guest = waitingQueue.dequeue();
@@ -127,8 +157,13 @@ public class BookingController {
                 room.getPrice(), checkInDate, numberOfNights);
         bookingList.add(booking);
 
-        // Update room status
-        room.setRoomStatus("Occupied");
+        // Update room status to Reserved (Booked but not yet checked-in at FrontDesk)
+        room.setRoomStatus("Reserved");
+
+        // Sync with Guest record so FrontDesk System recognizes the reservation
+        guest.setCheckedIn(false);
+        guest.setAssignedRoomNumber(room.getRoomNumber());
+        guest.setEffectiveRoomRate(room.getPrice());
 
         return 1;
     }
@@ -137,13 +172,15 @@ public class BookingController {
      * Returns the most recently created booking (for display after processing).
      */
     public Booking getLastBooking() {
-        if (bookingList.isEmpty()) return null;
+        if (bookingList.isEmpty())
+            return null;
         return bookingList.get(bookingList.getNumberOfEntries() - 1);
     }
 
     /**
      * Cancel a booking by booking ID. Sets status to "Cancelled" and
      * releases the room back to "Ready for Check-In".
+     * 
      * @return 1: success, -1: booking not found, -2: already cancelled
      */
     public int cancelBooking(String bookingId) {
@@ -159,6 +196,15 @@ public class BookingController {
                 if (room != null) {
                     room.setRoomStatus("Ready for Check-In");
                 }
+                // Reset Guest state to prevent stale data in FrontDesk billing
+                if (masterGuestRegistry != null) {
+                    Guest dummy = new Guest("", b.getGuestConfirmationNumber(), "", 0);
+                    Guest guest = masterGuestRegistry.search(dummy);
+                    if (guest != null && !guest.isCheckedIn()) {
+                        guest.setAssignedRoomNumber(null);
+                        guest.setEffectiveRoomRate(0.0);
+                    }
+                }
                 return 1;
             }
         }
@@ -172,13 +218,12 @@ public class BookingController {
         return bookingList;
     }
 
-
-
     /**
      * Find a room by room number (linear search).
      */
     public Room findRoomByNumber(String roomNumber) {
-        if (roomNumber == null) return null;
+        if (roomNumber == null)
+            return null;
         for (int i = 0; i < roomList.getNumberOfEntries(); i++) {
             Room r = roomList.get(i);
             if (r.getRoomNumber().equalsIgnoreCase(roomNumber.trim())) {
@@ -209,14 +254,12 @@ public class BookingController {
         return roomList;
     }
 
-
-
     /**
      * Report 1: Multi-Criteria Filtered & Sorted Booking Summary Report.
      * Filters by room type and minimum nights, then sorts by total price.
      *
-     * @param roomTypeFilter Room type filter ("ALL" for no filter)
-     * @param minNights Minimum number of nights (0 for no filter)
+     * @param roomTypeFilter       Room type filter ("ALL" for no filter)
+     * @param minNights            Minimum number of nights (0 for no filter)
      * @param sortByPriceAscending true for ascending, false for descending
      * @return Filtered and sorted list of bookings
      */
@@ -261,9 +304,10 @@ public class BookingController {
      * (whether they are still waiting in queue or already checked in).
      * Sorts by confirmation number.
      *
-     * @param tierFilter Loyalty tier filter ("ALL" for no filter)
-     * @param statusFilter "Waiting", "Checked-In", or "ALL"
-     * @param sortAscending true for ascending confirmation number, false for descending
+     * @param tierFilter    Loyalty tier filter ("ALL" for no filter)
+     * @param statusFilter  "Waiting", "Checked-In", or "ALL"
+     * @param sortAscending true for ascending confirmation number, false for
+     *                      descending
      * @return Filtered and sorted list of guests
      */
     public ListInterface<Guest> getFilteredAndSortedGuests(
@@ -329,7 +373,7 @@ public class BookingController {
     /**
      * Returns summary statistics for the registration & tier report.
      * Index: [0]=Total registered, [1]=Waiting, [2]=Checked-In,
-     *        [3]=Platinum, [4]=Gold, [5]=Silver, [6]=Standard
+     * [3]=Platinum, [4]=Gold, [5]=Silver, [6]=Standard
      */
     public int[] getRegistrationSummary() {
         int[] summary = new int[7];
@@ -341,10 +385,14 @@ public class BookingController {
         for (int i = 0; i < registeredGuests.getNumberOfEntries(); i++) {
             Guest g = registeredGuests.get(i);
             String tier = g.getLoyaltyTier();
-            if ("Platinum".equalsIgnoreCase(tier)) summary[3]++;
-            else if ("Gold".equalsIgnoreCase(tier)) summary[4]++;
-            else if ("Silver".equalsIgnoreCase(tier)) summary[5]++;
-            else summary[6]++;
+            if ("Platinum".equalsIgnoreCase(tier))
+                summary[3]++;
+            else if ("Gold".equalsIgnoreCase(tier))
+                summary[4]++;
+            else if ("Silver".equalsIgnoreCase(tier))
+                summary[5]++;
+            else
+                summary[6]++;
         }
         return summary;
     }

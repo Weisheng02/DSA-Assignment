@@ -205,6 +205,135 @@ public class BinarySearchTree<T extends Comparable<T>> implements BSTInterface<T
         }
     }
 
+    /**
+     * Pre-Order Traversal: Root -> Left -> Right
+     * Useful for creating a copy of the tree or serializing tree structure.
+     * Time Complexity: O(n)
+     */
+    @Override
+    public ListInterface<T> preOrderTraversal() {
+        ListInterface<T> resultList = new MyArrayList<>();
+        preOrder(root, resultList);
+        return resultList;
+    }
+
+    private void preOrder(Node<T> currentNode, ListInterface<T> list) {
+        if (currentNode != null) {
+            list.add(currentNode.data);
+            preOrder(currentNode.left, list);
+            preOrder(currentNode.right, list);
+        }
+    }
+
+    /**
+     * Post-Order Traversal: Left -> Right -> Root
+     * Useful for bottom-up operations like node deletion or calculating subtree metrics.
+     * Time Complexity: O(n)
+     */
+    @Override
+    public ListInterface<T> postOrderTraversal() {
+        ListInterface<T> resultList = new MyArrayList<>();
+        postOrder(root, resultList);
+        return resultList;
+    }
+
+    private void postOrder(Node<T> currentNode, ListInterface<T> list) {
+        if (currentNode != null) {
+            postOrder(currentNode.left, list);
+            postOrder(currentNode.right, list);
+            list.add(currentNode.data);
+        }
+    }
+
+    /**
+     * Rebalances an unbalanced BST into a height-balanced BST.
+     * Algorithm Steps:
+     * 1. Collect all elements in sorted order via in-order traversal (O(n)).
+     * 2. Build a balanced tree by picking the middle element recursively (O(n)).
+     * Total Time Complexity: O(n), Space Complexity: O(n).
+     */
+    @Override
+    public void rebalance() {
+        ListInterface<T> sortedList = inOrderTraversal();
+        root = buildBalancedTree(sortedList, 0, sortedList.getNumberOfEntries() - 1);
+    }
+
+    private Node<T> buildBalancedTree(ListInterface<T> list, int start, int end) {
+        if (start > end) {
+            return null;
+        }
+        int mid = start + (end - start) / 2;
+        Node<T> node = new Node<>(list.get(mid));
+        node.left = buildBalancedTree(list, start, mid - 1);
+        node.right = buildBalancedTree(list, mid + 1, end);
+        return node;
+    }
+
+    /**
+     * Calculates the total leaf nodes in the tree (nodes with no children).
+     * Time Complexity: O(n)
+     */
+    @Override
+    public int getLeafCount() {
+        return countLeaves(root);
+    }
+
+    private int countLeaves(Node<T> node) {
+        if (node == null) return 0;
+        if (node.left == null && node.right == null) return 1;
+        return countLeaves(node.left) + countLeaves(node.right);
+    }
+
+    /**
+     * Checks if the BST is height-balanced.
+     * Height-balanced definition: For every node, |height(left) - height(right)| <= 1.
+     * Time Complexity: O(n)
+     */
+    @Override
+    public boolean isBalanced() {
+        return checkBalanceHeight(root) != -1;
+    }
+
+    private int checkBalanceHeight(Node<T> node) {
+        if (node == null) return 0;
+        int leftH = checkBalanceHeight(node.left);
+        if (leftH == -1) return -1;
+        int rightH = checkBalanceHeight(node.right);
+        if (rightH == -1) return -1;
+
+        if (Math.abs(leftH - rightH) > 1) return -1;
+        return 1 + Math.max(leftH, rightH);
+    }
+
+    /**
+     * Prints an ASCII visualization of the tree structure.
+     */
+    @Override
+    public void printTree() {
+        if (root == null) {
+            System.out.println(" (Empty Tree)");
+            return;
+        }
+        printTreeHelper(root, "", true);
+    }
+
+    private void printTreeHelper(Node<T> node, String prefix, boolean isTail) {
+        if (node != null) {
+            System.out.println(prefix + (isTail ? "└── " : "├── ") + node.data.toString());
+            String newPrefix = prefix + (isTail ? "    " : "│   ");
+            boolean hasRight = node.right != null;
+            boolean hasLeft = node.left != null;
+            if (hasLeft && hasRight) {
+                printTreeHelper(node.right, newPrefix, false);
+                printTreeHelper(node.left, newPrefix, true);
+            } else if (hasLeft) {
+                printTreeHelper(node.left, newPrefix, true);
+            } else if (hasRight) {
+                printTreeHelper(node.right, newPrefix, true);
+            }
+        }
+    }
+
     @Override
     public int getNumberOfEntries() {
         return numberOfEntries;

@@ -67,14 +67,49 @@ public interface BSTInterface<T extends Comparable<T>> {
     int getHeight();
 
     /**
-     * Returns all entries in sorted order via in-order traversal.
+     * Returns all entries in sorted order via in-order traversal (Left -> Root -> Right).
      * @return A ListInterface containing all entries in ascending order.
      */
     ListInterface<T> inOrderTraversal();
 
     /**
-     * Gets the number of entries in this tree.
-     * @return The number of entries.
+     * Returns all entries via pre-order traversal (Root -> Left -> Right).
+     * @return A ListInterface containing entries in pre-order sequence.
+     */
+    ListInterface<T> preOrderTraversal();
+
+    /**
+     * Returns all entries via post-order traversal (Left -> Right -> Root).
+     * @return A ListInterface containing entries in post-order sequence.
+     */
+    ListInterface<T> postOrderTraversal();
+
+    /**
+     * Rebalances the BST into a perfectly height-balanced BST.
+     * Extracts sorted entries via in-order traversal and rebuilds recursively.
+     */
+    void rebalance();
+
+    /**
+     * Counts the total number of leaf nodes in the tree (nodes with 0 children).
+     * @return Total leaf node count.
+     */
+    int getLeafCount();
+
+    /**
+     * Checks if the BST is height-balanced (height difference between left and right subtrees <= 1 at every node).
+     * @return true if balanced; false otherwise.
+     */
+    boolean isBalanced();
+
+    /**
+     * Prints an ASCII visual representation of the tree structure.
+     */
+    void printTree();
+
+    /**
+     * Gets the total number of entries stored in this tree.
+     * @return The total entry count.
      */
     int getNumberOfEntries();
 

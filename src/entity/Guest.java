@@ -9,6 +9,9 @@ public class Guest implements Comparable<Guest> {
     private String confirmationNumber; // 8-digit unique ID
     private String loyaltyTier;        // Platinum, Gold, Silver, Standard
     private int loyaltyPoints;
+    private boolean checkedIn;
+    private String assignedRoomNumber;
+    private double effectiveRoomRate; // Actual rate charged (preserves upgrade benefits)
 
     public Guest(){
     }
@@ -18,7 +21,19 @@ public class Guest implements Comparable<Guest> {
         this.confirmationNumber = confirmationNumber;
         this.loyaltyTier = loyaltyTier;
         this.loyaltyPoints = loyaltyPoints;
+        this.checkedIn = false;
+        this.assignedRoomNumber = null;
+        this.effectiveRoomRate = 0.0;
     }
+
+    public boolean isCheckedIn() { return checkedIn; }
+    public void setCheckedIn(boolean checkedIn) { this.checkedIn = checkedIn; }
+
+    public String getAssignedRoomNumber() { return assignedRoomNumber; }
+    public void setAssignedRoomNumber(String assignedRoomNumber) { this.assignedRoomNumber = assignedRoomNumber; }
+
+    public double getEffectiveRoomRate() { return effectiveRoomRate; }
+    public void setEffectiveRoomRate(double effectiveRoomRate) { this.effectiveRoomRate = effectiveRoomRate; }
 
     public String getGuestName() { return guestName; }
     public void setGuestName(String guestName) { this.guestName = guestName; }

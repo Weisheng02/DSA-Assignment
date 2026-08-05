@@ -1,8 +1,9 @@
 package adt;
 
 /**
- * Author: Weisheng
- * Custom Array-Based Collection ADT Implementation: Circular Queue (Linear ADT).
+ * Author: Zhi Xuan
+ * Custom Array-Based Collection ADT Implementation: Circular Queue (Linear
+ * ADT).
  * Uses a circular array with front and rear pointers to achieve O(1) enqueue
  * and dequeue operations. The Walk-In Registrations module relies on this
  * structure to serve guests in strict FIFO (first-come-first-served) order.
@@ -25,7 +26,8 @@ public class ArrayQueue<T> implements QueueInterface<T> {
 
     @Override
     public boolean enqueue(T newEntry) {
-        if (newEntry == null) return false;
+        if (newEntry == null)
+            return false;
         if (numberOfEntries >= array.length) {
             doubleCapacity();
         }
@@ -37,7 +39,8 @@ public class ArrayQueue<T> implements QueueInterface<T> {
 
     @Override
     public T dequeue() {
-        if (isEmpty()) return null;
+        if (isEmpty())
+            return null;
         T frontEntry = array[front];
         array[front] = null; // avoid holding a stale reference
         front = (front + 1) % array.length;
@@ -47,7 +50,8 @@ public class ArrayQueue<T> implements QueueInterface<T> {
 
     @Override
     public T getFront() {
-        if (isEmpty()) return null;
+        if (isEmpty())
+            return null;
         return array[front];
     }
 

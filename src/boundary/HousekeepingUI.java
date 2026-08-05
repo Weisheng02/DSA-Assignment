@@ -8,7 +8,7 @@ import entity.Room;
 import java.util.Scanner;
 
 /**
- * Author: [Your Name Here]
+ * Author: Kai Wei
  * Boundary Class for the Housekeeping & Task Log Module (Linear ADT: Stack).
  */
 public class HousekeepingUI {
@@ -17,7 +17,15 @@ public class HousekeepingUI {
     private Scanner scanner;
 
     public HousekeepingUI() {
-        controller = new HousekeepingController();
+        this(new HousekeepingController());
+    }
+
+    public HousekeepingUI(HousekeepingController controller) {
+        this.controller = (controller != null) ? controller : new HousekeepingController();
+    }
+
+    public HousekeepingUI(ListInterface<Room> sharedRoomList) {
+        this(new HousekeepingController(sharedRoomList));
     }
 
     public void displayMenu() {
