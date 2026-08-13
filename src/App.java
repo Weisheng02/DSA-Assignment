@@ -90,16 +90,16 @@ public class App {
         roomList.add(new Room("202", "Deluxe Suite", "Ready for Check-In", 400.00));
 
         // Seed Master Guests
-        Guest alice = new Guest("Alice Tan", "10000001", "Platinum", 1200);
+        Guest alice = new Guest("Alice Tan", "980101-14-5566", "10000001", "Platinum", 1200);
         alice.setCheckedIn(true);
         alice.setAssignedRoomNumber("104");
         alice.setEffectiveRoomRate(350.00);
         guestTree.add(alice);
 
-        guestTree.add(new Guest("Bob Lee", "10000002", "Gold", 500));
-        guestTree.add(new Guest("Charlie Lim", "10000003", "Silver", 200));
-        guestTree.add(new Guest("David Wong", "10000004", "Standard", 50));
-        guestTree.add(new Guest("Eva Green", "10000005", "Platinum", 1800));
-        guestTree.add(new Guest("Frank Wright", "10000006", "Gold", 850));
+        guestTree.add(new Guest("Bob Lee", "990202-08-1234", "10000002", "Gold", 500));
+        guestTree.add(new Guest("Charlie Lim", "000303-10-9988", "10000003", "Silver", 200));
+        guestTree.add(new Guest("David Wong", "950404-01-3322", "10000004", "Standard", 50));
+        guestTree.add(new Guest("Eva Green", "920505-07-7711", "10000005", "Platinum", 1800));
+        guestTree.add(new Guest("Frank Wright", "960606-05-4433", "10000006", "Gold", 850));
     }
 }

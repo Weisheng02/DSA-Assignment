@@ -45,12 +45,13 @@ public class FrontDeskUI {
             System.out.println("2. Manage Guest Records");
             System.out.println("3. Display All Room Statuses");
             System.out.println("4. Process Guest Check-In");
-            System.out.println("5. Generate Billing & Receipt");
-            System.out.println("6. Management Reports");
-            System.out.println("7. View Tree Structure Info");
+            System.out.println("5. Process Room Transfer (Change Room)");
+            System.out.println("6. Generate Billing & Receipt");
+            System.out.println("7. Management Reports");
+            System.out.println("8. View Tree Structure Info");
             System.out.println("0. Back to Main Menu");
             System.out.println("--------------------------------------------------");
-            System.out.print("Enter choice (0-7): ");
+            System.out.print("Enter choice (0-8): ");
 
             choice = readIntInput();
             System.out.println();
@@ -69,19 +70,22 @@ public class FrontDeskUI {
                     handleCheckIn();
                     break;
                 case 5:
-                    handleBillingReceipt();
+                    handleRoomTransfer();
                     break;
                 case 6:
-                    displayReportsSubmenu();
+                    handleBillingReceipt();
                     break;
                 case 7:
+                    displayReportsSubmenu();
+                    break;
+                case 8:
                     displayTreeDiagnostics();
                     break;
                 case 0:
                     System.out.println("Returning to Main Menu...");
                     break;
                 default:
-                    System.out.println("Invalid option! Please enter a number between 0 and 7.");
+                    System.out.println("Invalid option! Please enter a number between 0 and 8.");
             }
         } while (choice != 0);
     }
@@ -91,8 +95,9 @@ public class FrontDeskUI {
         System.out.println("1. Search by Confirmation Number");
         System.out.println("2. Search by Guest Name");
         System.out.println("3. Search by Confirmation Number Range");
+        System.out.println("4. Search by IC / Passport Number");
         System.out.println("0. Return to Front Desk Menu");
-        System.out.print("Enter choice (0-3): ");
+        System.out.print("Enter choice (0-4): ");
         int mode = readIntInput();
 
         if (mode == 0) {
@@ -137,6 +142,15 @@ public class FrontDeskUI {
                     printGuestCard(rangeResults.get(i));
                 }
             }
+        } else if (mode == 4) {
+            System.out.print("Enter IC / Passport Number: ");
+            String ic = scanner.nextLine().trim();
+            Guest g = controller.searchGuestByIC(ic);
+            if (g != null) {
+                printGuestCard(g);
+            } else {
+                System.out.println("\nNo record found for IC / Passport No: " + ic);
+            }
         } else {
             System.out.println("Invalid search mode.");
         }
@@ -164,6 +178,9 @@ public class FrontDeskUI {
             System.out.print("Enter Guest Name: ");
             String name = scanner.nextLine().trim();
 
+            System.out.print("Enter IC / Passport Number: ");
+            String ic = scanner.nextLine().trim();
+
             System.out.println("Select Loyalty Tier (1. Platinum, 2. Gold, 3. Silver, 4. Standard): ");
             int tierChoice = readIntInput();
             String tier;
@@ -177,7 +194,7 @@ public class FrontDeskUI {
             System.out.print("Enter Initial Loyalty Points: ");
             int points = readPositiveIntInput();
 
-            Guest newGuest = new Guest(name, confirmNo, tier, points);
+            Guest newGuest = new Guest(name, ic, confirmNo, tier, points);
             if (controller.registerGuest(newGuest)) {
                 System.out.println("\nGuest " + name + " (" + confirmNo + ") registered successfully!");
             } else {
@@ -185,11 +202,19 @@ public class FrontDeskUI {
             }
         } else if (choice == 2) {
             String confirmNo = readValidConfirmationNumber("Enter 8-digit Confirmation Number to remove: ");
+            Guest g = controller.searchGuestByConfirmationNumber(confirmNo);
+            if (g == null) {
+                System.out.println("\nConfirmation Number " + confirmNo + " not found.");
+                return;
+            }
+            if (g.isCheckedIn()) {
+                System.out.println("\nCannot remove guest: Guest (" + confirmNo + " - " + g.getGuestName() + ") is currently CHECKED IN to Room " + g.getAssignedRoomNumber() + ".");
+                System.out.println("Note: Please process Guest Check-Out before removing guest record.");
+                return;
+            }
             Guest removed = controller.removeGuest(confirmNo);
             if (removed != null) {
                 System.out.println("\nRemoved guest: " + removed.getGuestName() + " (" + confirmNo + ")");
-            } else {
-                System.out.println("\nConfirmation Number " + confirmNo + " not found.");
             }
         } else {
             System.out.println("Invalid choice.");
@@ -211,6 +236,13 @@ public class FrontDeskUI {
             return;
         }
         System.out.println("\nGuest Found: " + g.getGuestName() + " (" + g.getLoyaltyTier() + " Member)");
+
+        if (g.isCheckedIn() || controller.isGuestCheckedIn(confirmNo)) {
+            String roomInfo = (g.getAssignedRoomNumber() != null) ? " (Room " + g.getAssignedRoomNumber() + ")" : "";
+            System.out.println("\nCheck-in failed: Guest (" + confirmNo + ") has ALREADY checked in to a room" + roomInfo + ".");
+            System.out.println("Note: A guest cannot check in multiple times simultaneously.");
+            return;
+        }
 
         String roomNo = g.getAssignedRoomNumber();
 
@@ -270,6 +302,66 @@ public class FrontDeskUI {
         }
     }
 
+    private void handleRoomTransfer() {
+        System.out.println("\n--- Process Room Transfer (Change Room Mid-Stay) ---");
+        String confirmNo = readValidConfirmationNumber("Enter 8-digit Confirmation Number (e.g. 10000001): ");
+
+        Guest g = controller.searchGuestByConfirmationNumber(confirmNo);
+        if (g == null) {
+            System.out.println("Room Transfer failed: Confirmation number does not exist.");
+            return;
+        }
+
+        if (!g.isCheckedIn()) {
+            System.out.println("\nRoom Transfer failed: Guest (" + confirmNo + " - " + g.getGuestName() + ") is NOT currently checked in to any room.");
+            System.out.println("Note: Room Transfer is only available for guests currently checked in.");
+            return;
+        }
+
+        String oldRoomNo = g.getAssignedRoomNumber();
+        Room currentRoom = (oldRoomNo != null) ? controller.searchRoomByNumber(oldRoomNo) : null;
+        String roomTypeStr = (currentRoom != null) ? currentRoom.getRoomType() : "Unknown";
+
+        System.out.println("\nGuest Found: " + g.getGuestName() + " (" + g.getLoyaltyTier() + " Member)");
+        System.out.println("Current Occupied Room: Room " + oldRoomNo + " (" + roomTypeStr + ")");
+
+        System.out.println("\nAvailable Rooms for Transfer:");
+        displayRoomList();
+
+        System.out.print("Enter NEW Room Number to transfer to: ");
+        String newRoomNo = scanner.nextLine().trim();
+
+        int result = controller.processRoomTransfer(confirmNo, newRoomNo);
+        switch (result) {
+            case 1:
+                Room newRoom = controller.searchRoomByNumber(newRoomNo);
+                System.out.println("\n==================================================");
+                System.out.println("          ROOM TRANSFER SUCCESSFUL!               ");
+                System.out.println("==================================================");
+                System.out.printf(" Guest Name        : %s\n", g.getGuestName());
+                System.out.printf(" Old Room Released : Room %s (Status set to [Dirty] for Housekeeping)\n", oldRoomNo);
+                System.out.printf(" New Room Assigned : Room %s (%s - Status: [Occupied])\n", newRoomNo, (newRoom != null ? newRoom.getRoomType() : ""));
+                System.out.printf(" New Room Rate     : RM %.2f/night\n", g.getEffectiveRoomRate());
+                System.out.println("==================================================");
+                break;
+            case -3:
+                System.out.println("\nRoom Transfer failed: Room " + newRoomNo + " does not exist.");
+                break;
+            case -4:
+                Room r = controller.searchRoomByNumber(newRoomNo);
+                String st = (r != null) ? r.getRoomStatus() : "Unavailable";
+                System.out.println("\nRoom Transfer failed: Room " + newRoomNo + " is currently [" + st + "].");
+                System.out.println("Note: Guest can only transfer to rooms with status [Ready for Check-In].");
+                break;
+            case -5:
+                System.out.println("\nRoom Transfer failed: Guest (" + confirmNo + ") is ALREADY occupied in Room " + newRoomNo + ".");
+                break;
+            default:
+                System.out.println("\nRoom Transfer failed.");
+                break;
+        }
+    }
+
     private void handleBillingReceipt() {
         System.out.println("\n--- Billing & Receipt Generator ---");
         String confirmNo = readValidConfirmationNumber("Enter 8-digit Confirmation Number (e.g. 10000001): ");
@@ -280,8 +372,8 @@ public class FrontDeskUI {
             return;
         }
 
-        if (!guest.isCheckedIn() && guest.getAssignedRoomNumber() == null) {
-            System.out.println("Billing Error: Guest (" + confirmNo + " - " + guest.getGuestName() + ") has NOT checked in to any room yet.");
+        if (!guest.isCheckedIn()) {
+            System.out.println("Billing Error: Guest (" + confirmNo + " - " + guest.getGuestName() + ") is NOT currently checked in to any room.");
             System.out.println("Note: Please process Guest Check-In (Option 4) before generating billing.");
             return;
         }
@@ -310,6 +402,7 @@ public class FrontDeskUI {
         System.out.println("==================================================");
         System.out.printf(" Confirmation No : %s\n", guest.getConfirmationNumber());
         System.out.printf(" Guest Name      : %s\n", guest.getGuestName());
+        System.out.printf(" IC / Passport   : %s\n", guest.getIcNo());
         System.out.printf(" Membership Tier : %s (%.0f%% Discount)\n", guest.getLoyaltyTier(), discountRate * 100);
         System.out.printf(" Room Assigned   : Room %s (%s)\n", room.getRoomNumber(), room.getRoomType());
         if (nightRate < room.getPrice()) {
@@ -327,10 +420,30 @@ public class FrontDeskUI {
         System.out.print("\nComplete Check-Out for this guest now? (Y/N): ");
         String checkOutAns = scanner.nextLine().trim();
         if (checkOutAns.equalsIgnoreCase("Y")) {
+            // Earn loyalty points (RM 10 = 1 point)
+            int earnedPoints = (int) (total / 10.0);
+            int updatedPoints = guest.getLoyaltyPoints() + earnedPoints;
+            guest.setLoyaltyPoints(updatedPoints);
+
+            // Auto-promote loyalty tier
+            if (updatedPoints >= 1000) {
+                guest.setLoyaltyTier("Platinum");
+            } else if (updatedPoints >= 500) {
+                guest.setLoyaltyTier("Gold");
+            } else if (updatedPoints >= 200) {
+                guest.setLoyaltyTier("Silver");
+            } else {
+                guest.setLoyaltyTier("Standard");
+            }
+
             int coResult = controller.processCheckOut(confirmNo);
             if (coResult == 1) {
-                System.out.println("Check-Out Successful!");
+                System.out.println("\nCheck-Out Successful!");
                 System.out.println("Guest (" + confirmNo + ") is checked out. Room " + roomNo + " status updated to [Dirty] for Housekeeping.");
+                System.out.println("--------------------------------------------------");
+                System.out.printf("🎉 LOYALTY REWARD: Earned +%d Points for this stay!\n", earnedPoints);
+                System.out.printf("   Total Points: %d pts | Current Tier: %s\n", guest.getLoyaltyPoints(), guest.getLoyaltyTier());
+                System.out.println("--------------------------------------------------");
             } else {
                 System.out.println("Check-Out Failed.");
             }
@@ -559,6 +672,7 @@ public class FrontDeskUI {
         System.out.println("--------------------------------------------------");
         System.out.printf(" Confirmation No : %s\n", g.getConfirmationNumber());
         System.out.printf(" Guest Name      : %s\n", g.getGuestName());
+        System.out.printf(" IC / Passport   : %s\n", g.getIcNo());
         System.out.printf(" Loyalty Tier    : %s\n", g.getLoyaltyTier());
         System.out.printf(" Reward Points   : %d pts\n", g.getLoyaltyPoints());
         System.out.println("--------------------------------------------------");

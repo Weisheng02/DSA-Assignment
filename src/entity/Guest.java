@@ -6,18 +6,24 @@ package entity;
  */
 public class Guest implements Comparable<Guest> {
     private String guestName;
-    private String confirmationNumber; // 8-digit unique ID
+    private String icNo;               // IC / Passport Number (Unique Person Identity)
+    private String confirmationNumber; // 8-digit unique ID per stay
     private String loyaltyTier;        // Platinum, Gold, Silver, Standard
     private int loyaltyPoints;
     private boolean checkedIn;
     private String assignedRoomNumber;
     private double effectiveRoomRate; // Actual rate charged (preserves upgrade benefits)
 
-    public Guest(){
+    public Guest() {
     }
     
     public Guest(String guestName, String confirmationNumber, String loyaltyTier, int loyaltyPoints) {
+        this(guestName, "N/A", confirmationNumber, loyaltyTier, loyaltyPoints);
+    }
+
+    public Guest(String guestName, String icNo, String confirmationNumber, String loyaltyTier, int loyaltyPoints) {
         this.guestName = guestName;
+        this.icNo = (icNo != null && !icNo.trim().isEmpty()) ? icNo.trim() : "N/A";
         this.confirmationNumber = confirmationNumber;
         this.loyaltyTier = loyaltyTier;
         this.loyaltyPoints = loyaltyPoints;
@@ -25,6 +31,9 @@ public class Guest implements Comparable<Guest> {
         this.assignedRoomNumber = null;
         this.effectiveRoomRate = 0.0;
     }
+
+    public String getIcNo() { return icNo; }
+    public void setIcNo(String icNo) { this.icNo = icNo; }
 
     public boolean isCheckedIn() { return checkedIn; }
     public void setCheckedIn(boolean checkedIn) { this.checkedIn = checkedIn; }
@@ -58,6 +67,7 @@ public class Guest implements Comparable<Guest> {
     public String toString() {
         return "Guest{" +
                 "Name='" + guestName + '\'' +
+                ", IC='" + icNo + '\'' +
                 ", ConfirmNo='" + confirmationNumber + '\'' +
                 ", Tier='" + loyaltyTier + '\'' +
                 ", Points=" + loyaltyPoints +

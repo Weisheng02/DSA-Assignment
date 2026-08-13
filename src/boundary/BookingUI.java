@@ -87,46 +87,67 @@ public class BookingUI {
     }
 
     private void handleRegisterWalkIn() {
-        System.out.println("\n--- Register New Walk-In Guest ---");
-        System.out.print("Enter Guest Name: ");
-        String name = scanner.nextLine().trim();
-        if (name.isEmpty()) {
-            System.out.println("Error: Guest name cannot be empty.");
+        System.out.println("\n--- Register Walk-In Guest / Reservation ---");
+        System.out.print("Enter Guest IC / Passport Number (e.g. 980101-14-5566): ");
+        String ic = scanner.nextLine().trim();
+        if (ic.isEmpty()) {
+            System.out.println("Error: IC / Passport Number cannot be empty.");
             return;
         }
 
-        System.out.println("Select Loyalty Tier:");
-        System.out.println("  1. Platinum");
-        System.out.println("  2. Gold");
-        System.out.println("  3. Silver");
-        System.out.println("  4. Standard");
-        System.out.print("Enter choice (1-4): ");
-        int tierChoice = readIntInput();
-
+        Guest existingGuest = controller.findGuestByIC(ic);
+        String name;
         String tier;
-        switch (tierChoice) {
-            case 1:
-                tier = "Platinum";
-                break;
-            case 2:
-                tier = "Gold";
-                break;
-            case 3:
-                tier = "Silver";
-                break;
-            default:
-                tier = "Standard";
-                break;
+        int points = 0;
+
+        if (existingGuest != null) {
+            name = existingGuest.getGuestName();
+            tier = existingGuest.getLoyaltyTier();
+            points = existingGuest.getLoyaltyPoints();
+            System.out.println("\n✨ Existing Member Recognized!");
+            System.out.printf("  Guest Name    : %s\n", name);
+            System.out.printf("  Loyalty Tier  : %s (%d pts)\n", tier, points);
+        } else {
+            System.out.print("New Guest Detected. Enter Guest Name: ");
+            name = scanner.nextLine().trim();
+            if (name.isEmpty()) {
+                System.out.println("Error: Guest name cannot be empty.");
+                return;
+            }
+
+            System.out.println("\nSelect Initial Loyalty Tier:");
+            System.out.println("  1. Platinum");
+            System.out.println("  2. Gold");
+            System.out.println("  3. Silver");
+            System.out.println("  4. Standard");
+            System.out.print("Enter choice (1-4): ");
+            int tierChoice = readIntInput();
+
+            switch (tierChoice) {
+                case 1:
+                    tier = "Platinum";
+                    break;
+                case 2:
+                    tier = "Gold";
+                    break;
+                case 3:
+                    tier = "Silver";
+                    break;
+                default:
+                    tier = "Standard";
+                    break;
+            }
         }
 
-        Guest newGuest = controller.registerWalkInGuest(name, tier);
+        Guest newGuest = controller.registerWalkInGuest(name, ic, tier, points);
 
         System.out.println("\n==================================================");
         System.out.println("         WALK-IN REGISTRATION SUCCESSFUL          ");
         System.out.println("==================================================");
         System.out.printf(" Guest Name        : %s\n", newGuest.getGuestName());
-        System.out.printf(" Confirmation No   : %s\n", newGuest.getConfirmationNumber());
-        System.out.printf(" Loyalty Tier      : %s\n", newGuest.getLoyaltyTier());
+        System.out.printf(" IC / Passport     : %s\n", newGuest.getIcNo());
+        System.out.printf(" Confirmation No   : %s (Unique For This Stay)\n", newGuest.getConfirmationNumber());
+        System.out.printf(" Loyalty Tier      : %s (%d pts)\n", newGuest.getLoyaltyTier(), newGuest.getLoyaltyPoints());
         System.out.printf(" Queue Position    : #%d\n", controller.getWaitingCount());
         System.out.println("==================================================");
         System.out.println("Guest has been added to the waiting queue.");
@@ -192,6 +213,16 @@ public class BookingUI {
 
         System.out.print("Enter Room Number to assign: ");
         String roomNo = scanner.nextLine().trim();
+
+        Room selectedRoom = controller.findRoomByNumber(roomNo);
+        if (selectedRoom == null) {
+            System.out.println("Error: Room number '" + roomNo + "' does not exist.");
+            return;
+        }
+        if (!"Ready for Check-In".equalsIgnoreCase(selectedRoom.getRoomStatus())) {
+            System.out.println("Error: Room " + roomNo + " is currently [" + selectedRoom.getRoomStatus() + "]. Only 'Ready for Check-In' rooms can be assigned.");
+            return;
+        }
 
         System.out.print("Enter Check-In Date (e.g. 2026-07-29): ");
         String checkInDate = scanner.nextLine().trim();

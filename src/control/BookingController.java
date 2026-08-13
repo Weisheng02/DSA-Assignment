@@ -88,15 +88,30 @@ public class BookingController {
         }
     }
 
-    /**
-     * Register a new walk-in guest and add to the waiting queue.
-     * Auto-generates an 8-digit confirmation number.
-     * 
-     * @return The newly registered Guest object.
-     */
+    public Guest findGuestByIC(String icNo) {
+        if (icNo == null || icNo.trim().isEmpty() || masterGuestRegistry == null)
+            return null;
+        String cleanQuery = icNo.trim().replaceAll("[^a-zA-Z0-9]", "").toLowerCase();
+        ListInterface<Guest> allGuests = masterGuestRegistry.inOrderTraversal();
+        for (int i = 0; i < allGuests.getNumberOfEntries(); i++) {
+            Guest g = allGuests.get(i);
+            if (g.getIcNo() != null) {
+                String cleanIc = g.getIcNo().replaceAll("[^a-zA-Z0-9]", "").toLowerCase();
+                if (cleanIc.equalsIgnoreCase(cleanQuery)) {
+                    return g;
+                }
+            }
+        }
+        return null;
+    }
+
     public Guest registerWalkInGuest(String guestName, String loyaltyTier) {
+        return registerWalkInGuest(guestName, "N/A", loyaltyTier, 0);
+    }
+
+    public Guest registerWalkInGuest(String guestName, String icNo, String loyaltyTier, int loyaltyPoints) {
         String confirmNo = String.valueOf(nextConfirmationNumber++);
-        Guest newGuest = new Guest(guestName, confirmNo, loyaltyTier, 0);
+        Guest newGuest = new Guest(guestName, icNo, confirmNo, loyaltyTier, loyaltyPoints);
         waitingQueue.enqueue(newGuest);
         registeredGuests.add(newGuest);
         // Sync to Master Guest Registry so FrontDesk & Loyalty can see this guest

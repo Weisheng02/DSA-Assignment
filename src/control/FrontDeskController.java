@@ -43,12 +43,17 @@ public class FrontDeskController {
     }
 
     private void seedInitialData() {
-        guestTree.add(new Guest("Alice Tan", "10000001", "Platinum", 1200));
-        guestTree.add(new Guest("Bob Lee", "10000002", "Gold", 500));
-        guestTree.add(new Guest("Charlie Lim", "10000003", "Silver", 200));
-        guestTree.add(new Guest("David Wong", "10000004", "Standard", 50));
-        guestTree.add(new Guest("Eva Green", "10000005", "Platinum", 1800));
-        guestTree.add(new Guest("Frank Wright", "10000006", "Gold", 850));
+        Guest alice = new Guest("Alice Tan", "980101-14-5566", "10000001", "Platinum", 1200);
+        alice.setCheckedIn(true);
+        alice.setAssignedRoomNumber("104");
+        alice.setEffectiveRoomRate(350.00);
+        guestTree.add(alice);
+
+        guestTree.add(new Guest("Bob Lee", "990202-08-1234", "10000002", "Gold", 500));
+        guestTree.add(new Guest("Charlie Lim", "000303-10-9988", "10000003", "Silver", 200));
+        guestTree.add(new Guest("David Wong", "950404-01-3322", "10000004", "Standard", 50));
+        guestTree.add(new Guest("Eva Green", "920505-07-7711", "10000005", "Platinum", 1800));
+        guestTree.add(new Guest("Frank Wright", "960606-05-4433", "10000006", "Gold", 850));
 
         roomTree.add(new Room("101", "Deluxe Suite", "Ready for Check-In", 350.00));
         roomTree.add(new Room("102", "Presidential Suite", "Dirty", 800.00));
@@ -57,6 +62,24 @@ public class FrontDeskController {
         roomTree.add(new Room("105", "Standard Room", "Cleaning In Progress", 180.00));
         roomTree.add(new Room("201", "Presidential Suite", "Ready for Check-In", 950.00));
         roomTree.add(new Room("202", "Deluxe Suite", "Ready for Check-In", 400.00));
+    }
+
+    // Search guest by IC Number (Unique Identity)
+    public Guest searchGuestByIC(String icNo) {
+        if (icNo == null || icNo.trim().isEmpty())
+            return null;
+        String queryClean = icNo.trim().replaceAll("[^a-zA-Z0-9]", "").toLowerCase();
+        ListInterface<Guest> allGuests = guestTree.inOrderTraversal();
+        for (int i = 0; i < allGuests.getNumberOfEntries(); i++) {
+            Guest g = allGuests.get(i);
+            if (g.getIcNo() != null) {
+                String cleanIc = g.getIcNo().replaceAll("[^a-zA-Z0-9]", "").toLowerCase();
+                if (cleanIc.equalsIgnoreCase(queryClean)) {
+                    return g;
+                }
+            }
+        }
+        return null;
     }
 
     // Search guest by confirmation number using BST search
@@ -69,7 +92,8 @@ public class FrontDeskController {
 
     // Search guests within a range of confirmation numbers
     public ListInterface<Guest> searchGuestsByConfirmationRange(String startNo, String endNo) {
-        if (startNo == null || endNo == null) return new MyArrayList<>();
+        if (startNo == null || endNo == null)
+            return new MyArrayList<>();
         Guest minDummy = new Guest("", startNo.trim(), "", 0);
         Guest maxDummy = new Guest("", endNo.trim(), "", 0);
         return guestTree.rangeSearch(minDummy, maxDummy);
@@ -77,14 +101,17 @@ public class FrontDeskController {
 
     // Add a new guest into the BST
     public boolean registerGuest(Guest guest) {
-        if (guest == null || guest.getConfirmationNumber() == null) return false;
-        if (guestTree.contains(guest)) return false;
+        if (guest == null || guest.getConfirmationNumber() == null)
+            return false;
+        if (guestTree.contains(guest))
+            return false;
         return guestTree.add(guest);
     }
 
     // Remove a guest from the BST
     public Guest removeGuest(String confirmNo) {
-        if (confirmNo == null || confirmNo.trim().isEmpty()) return null;
+        if (confirmNo == null || confirmNo.trim().isEmpty())
+            return null;
         Guest dummy = new Guest("", confirmNo.trim(), "", 0);
         return guestTree.remove(dummy);
     }
@@ -121,7 +148,22 @@ public class FrontDeskController {
 
     private ListInterface<String> activeCheckedInConfirmations = new MyArrayList<>();
 
-    // Process check-in: returns 1=success, -1=guest not found, -2=room not found, -3=room not ready, -4=guest already checked-in
+    public boolean isGuestCheckedIn(String confirmationNumber) {
+        if (confirmationNumber == null || confirmationNumber.trim().isEmpty())
+            return false;
+        Guest guest = searchGuestByConfirmationNumber(confirmationNumber);
+        if (guest != null && guest.isCheckedIn())
+            return true;
+        for (int i = 0; i < activeCheckedInConfirmations.getNumberOfEntries(); i++) {
+            if (activeCheckedInConfirmations.get(i).equalsIgnoreCase(confirmationNumber.trim())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // Process check-in: returns 1=success, -1=guest not found, -2=room not found,
+    // -3=room not ready, -4=guest already checked-in
     public int processCheckIn(String confirmationNumber, String roomNumber) {
         Room r = searchRoomByNumber(roomNumber);
         double price = (r != null) ? r.getPrice() : 0.0;
@@ -156,7 +198,8 @@ public class FrontDeskController {
 
         // Validate that if a room is Reserved, it must be reserved for THIS guest
         if ("Reserved".equalsIgnoreCase(currentStatus)) {
-            if (guest.getAssignedRoomNumber() == null || !guest.getAssignedRoomNumber().equalsIgnoreCase(roomNumber.trim())) {
+            if (guest.getAssignedRoomNumber() == null
+                    || !guest.getAssignedRoomNumber().equalsIgnoreCase(roomNumber.trim())) {
                 return -5; // Room is reserved for another guest
             }
         }
@@ -173,13 +216,17 @@ public class FrontDeskController {
      * Process Guest Check-Out:
      * Sets room status to "Dirty" for Housekeeping, resets guest checked-in state,
      * and removes guest from active checked-in list.
+     * 
      * @return 1: success, -1: guest not found, -2: guest not checked-in
      */
     public int processCheckOut(String confirmationNumber) {
-        if (confirmationNumber == null || confirmationNumber.trim().isEmpty()) return -1;
+        if (confirmationNumber == null || confirmationNumber.trim().isEmpty())
+            return -1;
         Guest guest = searchGuestByConfirmationNumber(confirmationNumber);
-        if (guest == null) return -1;
-        if (!guest.isCheckedIn()) return -2;
+        if (guest == null)
+            return -1;
+        if (!guest.isCheckedIn())
+            return -2;
 
         String roomNo = guest.getAssignedRoomNumber();
         if (roomNo != null) {
@@ -205,10 +252,58 @@ public class FrontDeskController {
         return 1;
     }
 
-    // Suggest a room upgrade - find cheapest available room that costs more than current
+    /**
+     * Process Room Transfer (Change Room mid-stay):
+     * Releases old room to "Dirty" for Housekeeping, sets new room to "Occupied",
+     * and updates guest's assigned room and effective rate.
+     * 
+     * @return 1: success, -1: guest not found, -2: guest not checked-in, -3: new room not found, -4: new room not ready, -5: same room selected
+     */
+    public int processRoomTransfer(String confirmationNumber, String newRoomNumber) {
+        if (confirmationNumber == null || confirmationNumber.trim().isEmpty() || newRoomNumber == null)
+            return -1;
+
+        Guest guest = searchGuestByConfirmationNumber(confirmationNumber);
+        if (guest == null)
+            return -1;
+        if (!guest.isCheckedIn())
+            return -2;
+
+        String oldRoomNo = guest.getAssignedRoomNumber();
+        if (oldRoomNo != null && oldRoomNo.equalsIgnoreCase(newRoomNumber.trim())) {
+            return -5; // Same room
+        }
+
+        Room newRoom = searchRoomByNumber(newRoomNumber);
+        if (newRoom == null)
+            return -3;
+
+        if (!"Ready for Check-In".equalsIgnoreCase(newRoom.getRoomStatus())) {
+            return -4; // New room not ready
+        }
+
+        // Release old room to Dirty for Housekeeping
+        if (oldRoomNo != null) {
+            Room oldRoom = searchRoomByNumber(oldRoomNo);
+            if (oldRoom != null) {
+                oldRoom.setRoomStatus("Dirty");
+            }
+        }
+
+        // Occupy new room and update guest details
+        newRoom.setRoomStatus("Occupied");
+        guest.setAssignedRoomNumber(newRoomNumber.trim());
+        guest.setEffectiveRoomRate(newRoom.getPrice());
+
+        return 1;
+    }
+
+    // Suggest a room upgrade - find cheapest available room that costs more than
+    // current
     public Room suggestRoomUpgrade(String currentRoomNo) {
         Room currentRoom = searchRoomByNumber(currentRoomNo);
-        if (currentRoom == null) return null;
+        if (currentRoom == null)
+            return null;
 
         ListInterface<Room> allRooms = roomTree.inOrderTraversal();
         Room bestUpgrade = null;
@@ -290,7 +385,8 @@ public class FrontDeskController {
     // Revenue and Occupancy Analytics
     public double calculateOccupancyRate() {
         int[] summary = getRoomStatusSummary();
-        if (summary[0] == 0) return 0.0;
+        if (summary[0] == 0)
+            return 0.0;
         return ((double) summary[2] / summary[0]) * 100.0; // summary[2] is Occupied count
     }
 

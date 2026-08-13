@@ -85,6 +85,13 @@ public class HousekeepingUI {
     private void advanceRoomStatus() {
         System.out.print("Enter Room Number: ");
         String roomNumber = scanner.nextLine().trim();
+
+        Room rExist = controller.findRoomByNumber(roomNumber);
+        if (rExist == null) {
+            System.out.println("Error: Room " + roomNumber + " not found.");
+            return;
+        }
+
         System.out.print("Enter Staff Name: ");
         String staffName = scanner.nextLine().trim();
 
@@ -109,6 +116,12 @@ public class HousekeepingUI {
     private void manualSetStatus() {
         System.out.print("Enter Room Number: ");
         String roomNumber = scanner.nextLine().trim();
+
+        Room rExist = controller.findRoomByNumber(roomNumber);
+        if (rExist == null) {
+            System.out.println("Error: Room " + roomNumber + " not found.");
+            return;
+        }
 
         System.out.println("Valid statuses:");
         for (String s : controller.getStatusSequence()) {
