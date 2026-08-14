@@ -19,7 +19,7 @@ public class Guest implements Comparable<Guest> {
 
     // === Stay / Booking Reference (BST Key) ===
     private String confirmationNumber;  // 8-digit unique Stay/Reservation Key (BST Search Key)
-    private String bookingStatus;       // Registered, Reserved, CheckedIn, CheckedOut, Cancelled, NoShow
+    private String bookingStatus;       // Registered, Waiting, Reserved, CheckedIn, CheckedOut, Cancelled, NoShow
     private String checkInDate;
     private String checkOutDate;
     private int numberOfNights;

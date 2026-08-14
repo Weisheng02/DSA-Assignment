@@ -83,6 +83,9 @@ public class BookingController {
                 "Malaysian", "james.ong@example.com", "20000002", "Standard", 30);
         Guest g3 = new Guest("Linda Tan", "990328-10-9012", "+60 16-703 9012", "Female",
                 "Malaysian", "linda.tan@example.com", "20000003", "Gold", 620);
+        g1.setBookingStatus("Waiting");
+        g2.setBookingStatus("Waiting");
+        g3.setBookingStatus("Waiting");
         g1.setSpecialRequest("Baby cot");
         g2.setSpecialRequest("None");
         g3.setSpecialRequest("Vegetarian breakfast");
@@ -161,6 +164,7 @@ public class BookingController {
             confirmNo = String.valueOf(nextConfirmationNumber++);
         }
         Guest newGuest = new Guest(guestName, icNo, confirmNo, loyaltyTier, loyaltyPoints);
+        newGuest.setBookingStatus("Waiting");
         waitingQueue.enqueue(newGuest);
         registeredGuests.add(newGuest);
         // Sync to Master Guest Registry so FrontDesk & Loyalty can see this guest

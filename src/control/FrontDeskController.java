@@ -293,6 +293,28 @@ public class FrontDeskController {
         return findBookingByConfirmation(confirmationNumber);
     }
 
+    /** Returns only complete, confirmed reservations scheduled to arrive today. */
+    public ListInterface<Guest> getTodaysReservedGuests() {
+        ListInterface<Guest> arrivals = new MyArrayList<>();
+        LocalDate today = LocalDate.now();
+        ListInterface<Guest> guests = guestTree.inOrderTraversal();
+
+        for (int i = 0; i < guests.getNumberOfEntries(); i++) {
+            Guest guest = guests.get(i);
+            if (guest == null || !guest.isReserved()) continue;
+
+            Booking booking = findBookingByConfirmation(guest.getConfirmationNumber());
+            if (booking == null || !"Confirmed".equalsIgnoreCase(booking.getBookingStatus())) continue;
+
+            try {
+                if (today.equals(LocalDate.parse(booking.getCheckInDate()))) arrivals.add(guest);
+            } catch (DateTimeParseException ignored) {
+                // Invalid booking dates are excluded and rejected by processCheckIn.
+            }
+        }
+        return arrivals;
+    }
+
     public Booking searchBookingById(String bookingId) {
         if (isBlank(bookingId)) return null;
         for (int i = 0; i < sharedBookingList.getNumberOfEntries(); i++) {
@@ -426,8 +448,7 @@ public class FrontDeskController {
         return false;
     }
 
-    // Process check-in: returns 1=success, -1=guest not found, -2=room not found,
-    // -3=room not ready, -4=guest already checked-in
+    // Process check-in: only a complete Reserved booking scheduled for today is eligible.
     public int processCheckIn(String confirmationNumber, String roomNumber) {
         Room r = searchRoomByNumber(roomNumber);
         double price = (r != null) ? r.getPrice() : 0.0;
@@ -455,10 +476,14 @@ public class FrontDeskController {
 
         if ("NoShow".equalsIgnoreCase(guest.getBookingStatus())) return -8;
 
+        if (!guest.isReserved()) return -12;
+
         LocalDate today = LocalDate.now();
         Booking booking = findBookingByConfirmation(confirmationNumber);
-        if (booking != null) {
-            if ("NoShow".equalsIgnoreCase(booking.getBookingStatus())) return -8;
+        if (booking == null) return -13;
+        if ("NoShow".equalsIgnoreCase(booking.getBookingStatus())) return -8;
+        if (!"Confirmed".equalsIgnoreCase(booking.getBookingStatus())) return -13;
+        try {
             LocalDate scheduledArrival = LocalDate.parse(booking.getCheckInDate());
             if (today.isBefore(scheduledArrival)) return -9; // Too early
             if (today.isAfter(scheduledArrival)) {
@@ -466,14 +491,8 @@ public class FrontDeskController {
                 guest.setBookingStatus("NoShow");
                 return -10; // Scheduled arrival date has passed
             }
-        } else if (guest.getCheckInDate() != null) {
-            try {
-                LocalDate scheduledArrival = LocalDate.parse(guest.getCheckInDate());
-                if (today.isBefore(scheduledArrival)) return -9;
-                if (today.isAfter(scheduledArrival)) return -10;
-            } catch (DateTimeParseException ignored) {
-                return -11;
-            }
+        } catch (DateTimeParseException ignored) {
+            return -11;
         }
 
         for (int i = 0; i < activeCheckedInConfirmations.getNumberOfEntries(); i++) {

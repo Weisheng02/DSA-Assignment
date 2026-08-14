@@ -356,6 +356,23 @@ public class FrontDeskUI {
 
     private void handleCheckIn() {
         System.out.println("\n--- Guest Check-In ---");
+
+        ListInterface<Guest> todayArrivals = controller.getTodaysReservedGuests();
+        System.out.println("Today's Reserved Arrivals (" + LocalDate.now() + "):");
+        if (todayArrivals.isEmpty()) {
+            System.out.println("No confirmed reservations are scheduled to arrive today.");
+            return;
+        }
+        System.out.printf("%-12s | %-18s | %-8s | %-18s%n",
+                "Confirm No", "Guest Name", "Room", "Room Type");
+        System.out.println("-------------+--------------------+----------+-------------------");
+        for (int i = 0; i < todayArrivals.getNumberOfEntries(); i++) {
+            Guest arrival = todayArrivals.get(i);
+            System.out.printf("%-12s | %-18s | %-8s | %-18s%n",
+                    arrival.getConfirmationNumber(), arrival.getGuestName(),
+                    arrival.getAssignedRoomNumber(), arrival.getRoomType());
+        }
+
         String confirmNo = readValidConfirmationNumber("Enter 8-digit Confirmation Number (e.g. 10000001): ");
 
         Guest g = controller.searchGuestByConfirmationNumber(confirmNo);
@@ -385,13 +402,14 @@ public class FrontDeskUI {
         }
 
         Booking linkedBooking = controller.getBookingByConfirmation(confirmNo);
-        if (linkedBooking == null && g.getNumberOfNights() <= 0) {
-            System.out.print("Walk-in stay duration (1-30 nights): ");
-            int nights = readIntInput();
-            if (controller.setWalkInStayLength(confirmNo, nights) != 1) {
-                System.out.println("Check-in failed: Stay duration must be between 1 and 30 nights.");
-                return;
-            }
+        if (!g.isReserved()) {
+            System.out.println("\nCheck-in failed: Guest status is [" + g.getBookingStatus() + "].");
+            System.out.println("Only a confirmed reservation scheduled for today can be checked in.");
+            return;
+        }
+        if (linkedBooking == null || !"Confirmed".equalsIgnoreCase(linkedBooking.getBookingStatus())) {
+            System.out.println("\nCheck-in failed: No complete confirmed booking is linked to this guest.");
+            return;
         }
 
         String roomNo = g.getAssignedRoomNumber();
@@ -479,6 +497,13 @@ public class FrontDeskUI {
                 break;
             case -11:
                 System.out.println("\nCheck-in failed: The stored reservation date is invalid. Please correct the booking first.");
+                break;
+            case -12:
+                System.out.println("\nCheck-in failed: This guest does not have Reserved status.");
+                System.out.println("Create and process the reservation in the Booking module first.");
+                break;
+            case -13:
+                System.out.println("\nCheck-in failed: No complete confirmed booking is linked to this confirmation number.");
                 break;
         }
     }
