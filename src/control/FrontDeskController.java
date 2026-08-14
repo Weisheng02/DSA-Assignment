@@ -112,7 +112,7 @@ public class FrontDeskController {
         alice.setAssignedRoomNumber("104");
         alice.setEffectiveRoomRate(350.00);
         alice.setRoomType("Deluxe Suite");
-        alice.setCheckInDate("2026-08-12");
+        alice.setCheckInDate(LocalDate.now().minusDays(1).toString());
         alice.setNumberOfNights(3);
         guestTree.add(alice);
 

@@ -504,7 +504,7 @@ Step 7 → 用户选 0 时退出循环，程序结束
 
 **【9. Time Complexity】** O(1) per iteration（每次循环是常数时间）
 
-**【10. Space Complexity】** O(G + R) — G = 客人数，R = 房间数
+**【10. Space Complexity】** O(G + R + B) — G = 客人数，R = 房间数，B = 预订数
 
 **【11. 例子】** 
 用户看到主菜单，输入 `3`，进入 FrontDeskUI 的菜单；操作完毕后返回主菜单；输入 `0` 退出。
@@ -514,15 +514,16 @@ Step 7 → 用户选 0 时退出循环，程序结束
 
 ---
 
-### Function: `seedMasterData(BSTInterface<Guest>, ListInterface<Room>)`
+### Function: `seedMasterData(BSTInterface<Guest>, ListInterface<Room>, ListInterface<Booking>)`
 
-**【1. 做什么？】** 预先填入初始测试数据（7 间房和 6 个客人）。
+**【1. 做什么？】** 预先填入一致的初始测试数据（8 间房、6 个 Master Guest 和 5 个 Booking）。BookingController 随后再加入 3 个 FIFO Waiting Guest。
 
 **【2. 为什么需要？】** 程序启动时需要一些数据来演示功能，不然系统是空的，什么都做不了。
 
 **【3. Input】**
 - `guestTree` — Guest BST 的引用
 - `roomList` — Room List 的引用
+- `bookingList` — Booking List 的引用
 
 **【4. Output】** `void` — 直接修改传入的数据结构，不需要返回。
 
@@ -530,11 +531,13 @@ Step 7 → 用户选 0 时退出循环，程序结束
 
 **【6. 执行过程】**
 
-Step 1 → 添加 7 个 Room 到 roomList（用 `roomList.add(new Room(...))`）  
-Step 2 → 创建 Alice（已入住状态）并加入 BST  
-Step 3 → 添加 Bob, Charlie, David, Eva, Frank 到 BST  
+Step 1 → 添加 8 个 Room，覆盖 Ready、Dirty、Reserved、Occupied、Cleaning 和 Inspected 状态
+Step 2 → 创建 6 个资料完整的 Guest，覆盖 Registered、Reserved、CheckedIn、CheckedOut、Cancelled 和 NoShow
+Step 3 → 使用相对当前日期的入住/退房日期，避免测试数据过期
+Step 4 → 以较平衡的顺序加入 Guest BST
+Step 5 → 添加 5 个与 Guest 和 Room 状态一致的 Booking
 
-**【7. Data Structure】** MyArrayList（存 Room）、BinarySearchTree（存 Guest）
+**【7. Data Structure】** MyArrayList（存 Room 和 Booking）、BinarySearchTree（存 Guest）
 
 **【8. Algorithm】** BST Insertion — 每次 `guestTree.add()` 都按 confirmationNumber 插入到正确位置
 
@@ -542,23 +545,18 @@ Step 3 → 添加 Bob, Charlie, David, Eva, Frank 到 BST
 
 **【11. 例子】**
 
-插入顺序：Alice(10000001), Bob(10000002), Charlie(10000003), David(10000004), Eva(10000005), Frank(10000006)
+插入顺序：David(10000004), Bob(10000002), Frank(10000006), Alice(10000001), Charlie(10000003), Eva(10000005)
 
 BST 结构（按 confirmationNumber 排序）：
 ```
-        10000001 (Alice)
-             \
-          10000002 (Bob)
-               \
-            10000003 (Charlie)
-                 \
-              10000004 (David)
-                   \
-                10000005 (Eva)
-                     \
-                  10000006 (Frank)
+             10000004 (David)
+             /              \
+    10000002 (Bob)      10000006 (Frank)
+       /       \             /
+10000001    10000003     10000005
+ (Alice)    (Charlie)       (Eva)
 ```
-（注意：因为是按顺序插入的，BST 会退化成链表形状，直到调用 `rebalance()`）
+该插入顺序让初始 Master Guest BST 保持较平衡，之后仍可使用 `rebalance()` 演示重整。
 
 ---
 
@@ -2113,7 +2111,7 @@ FrontDeskUI.displayMenu()
 ```
  1. Program Start → JVM 调用 App.main()
  2. 创建共享数据 → BST<Guest> + MyArrayList<Room>
- 3. seedMasterData() → 预填 7 间房 + 6 个客人
+ 3. seedMasterData() → 预填 8 间房 + 6 个 Master Guest + 5 个 Booking
  4. 创建 4 个 UI → BookingUI, HousekeepingUI, FrontDeskUI, LoyaltyUI
  5. 显示主菜单 → do-while 循环
 

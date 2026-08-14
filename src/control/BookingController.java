@@ -61,6 +61,7 @@ public class BookingController {
             seedRooms();
         }
         seedInitialQueueGuests();
+        initializeNextIdentifiers();
     }
 
     private void seedRooms() {
@@ -76,9 +77,15 @@ public class BookingController {
     private void seedInitialQueueGuests() {
         if (!waitingQueue.isEmpty()) return;
 
-        Guest g1 = new Guest("Sarah Chen", "010512-08-1234", "20000001", "Silver", 150);
-        Guest g2 = new Guest("James Ong", "020715-14-5678", "20000002", "Standard", 30);
-        Guest g3 = new Guest("Linda Tan", "990328-10-9012", "20000003", "Gold", 620);
+        Guest g1 = new Guest("Sarah Chen", "010512-08-1234", "+60 12-701 1234", "Female",
+                "Malaysian", "sarah.chen@example.com", "20000001", "Silver", 220);
+        Guest g2 = new Guest("James Ong", "020715-14-5678", "+60 11-702 5678", "Male",
+                "Malaysian", "james.ong@example.com", "20000002", "Standard", 30);
+        Guest g3 = new Guest("Linda Tan", "990328-10-9012", "+60 16-703 9012", "Female",
+                "Malaysian", "linda.tan@example.com", "20000003", "Gold", 620);
+        g1.setSpecialRequest("Baby cot");
+        g2.setSpecialRequest("None");
+        g3.setSpecialRequest("Vegetarian breakfast");
 
         waitingQueue.enqueue(g1);
         waitingQueue.enqueue(g2);
@@ -94,11 +101,37 @@ public class BookingController {
             masterGuestRegistry.add(g3);
         }
 
-        nextConfirmationNumber = 20000004;
+        // App owns the shared master guests/bookings. This method only provides
+        // FIFO queue examples and does not duplicate any master booking.
+    }
 
-        // Alice is already checked in in the application seed data. She is not an
-        // active reservation in this module, so no artificial cancellable booking is
-        // created for her. The first booking processed from this queue uses BK0001.
+    /** Starts generated identifiers after all records already present in shared memory. */
+    private void initializeNextIdentifiers() {
+        int highestConfirmation = nextConfirmationNumber - 1;
+        ListInterface<Guest> guests = getRegisteredGuestsSnapshot();
+        for (int i = 0; i < guests.getNumberOfEntries(); i++) {
+            String confirmation = guests.get(i).getConfirmationNumber();
+            if (confirmation != null && confirmation.matches("\\d{8}")) {
+                highestConfirmation = Math.max(highestConfirmation, Integer.parseInt(confirmation));
+            }
+        }
+        nextConfirmationNumber = highestConfirmation + 1;
+
+        int highestBookingId = 0;
+        for (int i = 0; i < bookingList.getNumberOfEntries(); i++) {
+            Booking booking = bookingList.get(i);
+            if (booking != null && booking.getBookingId() != null
+                    && booking.getBookingId().matches("(?i)BK\\d+")) {
+                highestBookingId = Math.max(highestBookingId,
+                        Integer.parseInt(booking.getBookingId().substring(2)));
+            }
+        }
+        nextBookingId = highestBookingId + 1;
+    }
+
+    /** Uses the shared registry as the source of truth when modules are integrated. */
+    private ListInterface<Guest> getRegisteredGuestsSnapshot() {
+        return masterGuestRegistry != null ? masterGuestRegistry.inOrderTraversal() : registeredGuests;
     }
 
     public Guest findGuestByIC(String icNo) {
@@ -124,6 +157,9 @@ public class BookingController {
 
     public Guest registerWalkInGuest(String guestName, String icNo, String loyaltyTier, int loyaltyPoints) {
         String confirmNo = String.valueOf(nextConfirmationNumber++);
+        while (isConfirmationNumberUsed(confirmNo)) {
+            confirmNo = String.valueOf(nextConfirmationNumber++);
+        }
         Guest newGuest = new Guest(guestName, icNo, confirmNo, loyaltyTier, loyaltyPoints);
         waitingQueue.enqueue(newGuest);
         registeredGuests.add(newGuest);
@@ -132,6 +168,14 @@ public class BookingController {
             masterGuestRegistry.add(newGuest);
         }
         return newGuest;
+    }
+
+    private boolean isConfirmationNumberUsed(String confirmationNumber) {
+        ListInterface<Guest> guests = getRegisteredGuestsSnapshot();
+        for (int i = 0; i < guests.getNumberOfEntries(); i++) {
+            if (confirmationNumber.equalsIgnoreCase(guests.get(i).getConfirmationNumber())) return true;
+        }
+        return false;
     }
 
     /**
@@ -190,6 +234,9 @@ public class BookingController {
 
         // Create booking record
         String bookingId = String.format("BK%04d", nextBookingId++);
+        while (isBookingIdUsed(bookingId)) {
+            bookingId = String.format("BK%04d", nextBookingId++);
+        }
         Booking booking = new Booking(bookingId, guest.getConfirmationNumber(),
                 guest.getGuestName(), room.getRoomNumber(), room.getRoomType(),
                 room.getPrice(), checkInDate, numberOfNights);
@@ -213,6 +260,14 @@ public class BookingController {
         guest.setSpecialRequest(booking.getSpecialRequest());
 
         return 1;
+    }
+
+    private boolean isBookingIdUsed(String bookingId) {
+        for (int i = 0; i < bookingList.getNumberOfEntries(); i++) {
+            Booking booking = bookingList.get(i);
+            if (booking != null && bookingId.equalsIgnoreCase(booking.getBookingId())) return true;
+        }
+        return false;
     }
 
     /**
@@ -651,7 +706,7 @@ public class BookingController {
      * Sorts by confirmation number.
      *
      * @param tierFilter    Loyalty tier filter ("ALL" for no filter)
-     * @param statusFilter  "Waiting", "Processed", or "ALL"
+     * @param statusFilter  lifecycle status such as "Waiting", "Confirmed", or "ALL"
      * @param sortAscending true for ascending confirmation number, false for
      *                      descending
      * @return Filtered and sorted list of guests
@@ -664,8 +719,9 @@ public class BookingController {
         // Build a list of confirmation numbers currently in the queue
         ListInterface<Guest> queueSnapshot = waitingQueue.toList();
 
-        for (int i = 0; i < registeredGuests.getNumberOfEntries(); i++) {
-            Guest g = registeredGuests.get(i);
+        ListInterface<Guest> allRegisteredGuests = getRegisteredGuestsSnapshot();
+        for (int i = 0; i < allRegisteredGuests.getNumberOfEntries(); i++) {
+            Guest g = allRegisteredGuests.get(i);
 
             // Search/filter by tier
             boolean tierMatch = "ALL".equalsIgnoreCase(tierFilter)
@@ -732,11 +788,12 @@ public class BookingController {
     public int[] getRegistrationSummary() {
         refreshExpiredBookings();
         int[] summary = new int[11];
-        summary[0] = registeredGuests.getNumberOfEntries();
+        ListInterface<Guest> allRegisteredGuests = getRegisteredGuestsSnapshot();
+        summary[0] = allRegisteredGuests.getNumberOfEntries();
         ListInterface<Guest> queueSnapshot = waitingQueue.toList();
 
-        for (int i = 0; i < registeredGuests.getNumberOfEntries(); i++) {
-            Guest g = registeredGuests.get(i);
+        for (int i = 0; i < allRegisteredGuests.getNumberOfEntries(); i++) {
+            Guest g = allRegisteredGuests.get(i);
             String status = getGuestOperationalStatus(g, queueSnapshot);
             if ("Waiting".equalsIgnoreCase(status)) summary[1]++;
             else if ("Confirmed".equalsIgnoreCase(status) || "Reserved".equalsIgnoreCase(status)) summary[2]++;

@@ -102,18 +102,33 @@ public class Booking {
     }
 
     public void recordCheckIn() {
+        recordCheckIn(LocalDate.now());
+    }
+
+    /** Records an explicit actual date, which is also useful when loading history. */
+    public void recordCheckIn(LocalDate actualDate) {
         this.bookingStatus = "CheckedIn";
-        this.actualCheckInDate = LocalDate.now().toString();
+        this.actualCheckInDate = (actualDate != null ? actualDate : LocalDate.now()).toString();
     }
 
     public void recordCheckOut() {
+        recordCheckOut(LocalDate.now());
+    }
+
+    /** Records an explicit actual date, which is also useful when loading history. */
+    public void recordCheckOut(LocalDate actualDate) {
         this.bookingStatus = "CheckedOut";
-        this.actualCheckOutDate = LocalDate.now().toString();
+        this.actualCheckOutDate = (actualDate != null ? actualDate : LocalDate.now()).toString();
     }
 
     public void recordNoShow() {
+        recordNoShow(LocalDate.now());
+    }
+
+    /** Records an explicit no-show date while preserving the normal no-argument API. */
+    public void recordNoShow(LocalDate recordedDate) {
         this.bookingStatus = "NoShow";
-        this.noShowDate = LocalDate.now().toString();
+        this.noShowDate = (recordedDate != null ? recordedDate : LocalDate.now()).toString();
     }
 
     /** Computes the departure date from the inclusive check-in date and stay length. */
