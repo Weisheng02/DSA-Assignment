@@ -32,11 +32,42 @@ public class Room implements Comparable<Room> {
     public double getPrice() { return price; }
     public void setPrice(double price) { this.price = price; }
 
+    // ========== Helper Methods ==========
+
+    public boolean isAvailable() {
+        return "Ready for Check-In".equalsIgnoreCase(roomStatus);
+    }
+
+    public boolean isOccupied() {
+        return "Occupied".equalsIgnoreCase(roomStatus);
+    }
+
+    public boolean isReserved() {
+        return "Reserved".equalsIgnoreCase(roomStatus);
+    }
+
+    public boolean isDirty() {
+        return "Dirty".equalsIgnoreCase(roomStatus);
+    }
+
     @Override
     public int compareTo(Room other) {
         if (other == null || other.roomNumber == null) return 1;
         if (this.roomNumber == null) return -1;
         return this.roomNumber.compareToIgnoreCase(other.roomNumber);
+    }
+
+    @Override
+    public boolean equals(Object obj) {
+        if (this == obj) return true;
+        if (obj == null || getClass() != obj.getClass()) return false;
+        Room other = (Room) obj;
+        return roomNumber != null && roomNumber.equalsIgnoreCase(other.roomNumber);
+    }
+
+    @Override
+    public int hashCode() {
+        return (roomNumber != null) ? roomNumber.toLowerCase().hashCode() : 0;
     }
 
     @Override

@@ -22,6 +22,11 @@ public class BinarySearchTree<T extends Comparable<T>> implements BSTInterface<T
         }
     }
 
+    /** Mutable return holder used by recursive deletion without unsafe generic arrays. */
+    private static class ValueHolder<E> {
+        private E value;
+    }
+
     public BinarySearchTree() {
         root = null;
         numberOfEntries = 0;
@@ -53,17 +58,15 @@ public class BinarySearchTree<T extends Comparable<T>> implements BSTInterface<T
     public T remove(T entry) {
         if (entry == null || root == null) return null;
 
-        // Use an array to hold the removed value since Java can't return multiple values
-        @SuppressWarnings("unchecked")
-        T[] removedValue = (T[]) new Comparable[1];
+        ValueHolder<T> removedValue = new ValueHolder<>();
         root = removeNode(root, entry, removedValue);
-        if (removedValue[0] != null) {
+        if (removedValue.value != null) {
             numberOfEntries--;
         }
-        return removedValue[0];
+        return removedValue.value;
     }
 
-    private Node<T> removeNode(Node<T> currentNode, T entry, T[] removedValue) {
+    private Node<T> removeNode(Node<T> currentNode, T entry, ValueHolder<T> removedValue) {
         if (currentNode == null) {
             return null;
         }
@@ -75,7 +78,7 @@ public class BinarySearchTree<T extends Comparable<T>> implements BSTInterface<T
             currentNode.right = removeNode(currentNode.right, entry, removedValue);
         } else {
             // Found the node to remove
-            removedValue[0] = currentNode.data;
+            removedValue.value = currentNode.data;
 
             // Case 1: leaf or only one child
             if (currentNode.left == null) {
@@ -87,8 +90,7 @@ public class BinarySearchTree<T extends Comparable<T>> implements BSTInterface<T
             // Case 2: two children -> replace with in-order successor
             T successor = findMinValue(currentNode.right);
             currentNode.data = successor;
-            @SuppressWarnings("unchecked")
-            T[] temp = (T[]) new Comparable[1];
+            ValueHolder<T> temp = new ValueHolder<>();
             currentNode.right = removeNode(currentNode.right, successor, temp);
         }
         return currentNode;

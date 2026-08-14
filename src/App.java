@@ -7,6 +7,7 @@ import boundary.FrontDeskUI;
 import boundary.HousekeepingUI;
 import boundary.LoyaltyUI;
 import entity.Guest;
+import entity.Booking;
 import entity.Room;
 import java.util.Scanner;
 
@@ -24,14 +25,15 @@ public class App {
         // 1. Initialize In-Memory Shared Master Collections (No External DB Needed)
         BSTInterface<Guest> masterGuestRegistry = new BinarySearchTree<>();
         ListInterface<Room> sharedRoomList = new MyArrayList<>();
+        ListInterface<Booking> sharedBookingList = new MyArrayList<>();
 
         // 2. Seed Initial Master Data ONCE
         seedMasterData(masterGuestRegistry, sharedRoomList);
 
         // 3. Instantiate UI Subsystems passing shared memory references
-        BookingUI bookingUI = new BookingUI(sharedRoomList, masterGuestRegistry);
+        BookingUI bookingUI = new BookingUI(sharedRoomList, sharedBookingList, masterGuestRegistry);
         HousekeepingUI housekeepingUI = new HousekeepingUI(sharedRoomList);
-        FrontDeskUI frontDeskUI = new FrontDeskUI(masterGuestRegistry, sharedRoomList);
+        FrontDeskUI frontDeskUI = new FrontDeskUI(masterGuestRegistry, sharedRoomList, sharedBookingList);
         LoyaltyUI loyaltyUI = new LoyaltyUI(masterGuestRegistry);
 
         do {
@@ -94,6 +96,9 @@ public class App {
         alice.setCheckedIn(true);
         alice.setAssignedRoomNumber("104");
         alice.setEffectiveRoomRate(350.00);
+        alice.setRoomType("Deluxe Suite");
+        alice.setCheckInDate("2026-08-12");
+        alice.setNumberOfNights(3);
         guestTree.add(alice);
 
         guestTree.add(new Guest("Bob Lee", "990202-08-1234", "10000002", "Gold", 500));

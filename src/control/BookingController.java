@@ -8,6 +8,8 @@ import adt.QueueInterface;
 import entity.Booking;
 import entity.Guest;
 import entity.Room;
+import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
 import java.util.Comparator;
 
 /**
@@ -16,6 +18,9 @@ import java.util.Comparator;
  * Uses Queue (FIFO) to manage incoming guests.
  */
 public class BookingController {
+
+    public static final int MAX_STAY_NIGHTS = 30;
+    public static final int MAX_ADVANCE_BOOKING_DAYS = 365;
 
     private QueueInterface<Guest> waitingQueue;
     private ListInterface<Booking> bookingList;
@@ -26,17 +31,27 @@ public class BookingController {
     private int nextBookingId;
 
     public BookingController() {
-        this(null, null, null);
+        this(null, null, null, null);
     }
 
     public BookingController(ListInterface<Room> sharedRoomList, BSTInterface<Guest> masterGuestRegistry) {
-        this(sharedRoomList, null, masterGuestRegistry);
+        this(sharedRoomList, null, null, masterGuestRegistry);
+    }
+
+    public BookingController(ListInterface<Room> sharedRoomList, BSTInterface<Guest> masterGuestRegistry,
+            ListInterface<Booking> sharedBookingList) {
+        this(sharedRoomList, sharedBookingList, null, masterGuestRegistry);
     }
 
     public BookingController(ListInterface<Room> sharedRoomList, ListInterface<Guest> sharedRegisteredGuests,
             BSTInterface<Guest> masterGuestRegistry) {
+        this(sharedRoomList, null, sharedRegisteredGuests, masterGuestRegistry);
+    }
+
+    private BookingController(ListInterface<Room> sharedRoomList, ListInterface<Booking> sharedBookingList,
+            ListInterface<Guest> sharedRegisteredGuests, BSTInterface<Guest> masterGuestRegistry) {
         waitingQueue = new ArrayQueue<>();
-        bookingList = new MyArrayList<>();
+        bookingList = (sharedBookingList != null) ? sharedBookingList : new MyArrayList<>();
         registeredGuests = (sharedRegisteredGuests != null) ? sharedRegisteredGuests : new MyArrayList<>();
         roomList = (sharedRoomList != null) ? sharedRoomList : new MyArrayList<>();
         this.masterGuestRegistry = masterGuestRegistry;
@@ -61,9 +76,9 @@ public class BookingController {
     private void seedInitialQueueGuests() {
         if (!waitingQueue.isEmpty()) return;
 
-        Guest g1 = new Guest("Sarah Chen", "20000001", "Silver", 150);
-        Guest g2 = new Guest("James Ong", "20000002", "Standard", 30);
-        Guest g3 = new Guest("Linda Tan", "20000003", "Gold", 620);
+        Guest g1 = new Guest("Sarah Chen", "010512-08-1234", "20000001", "Silver", 150);
+        Guest g2 = new Guest("James Ong", "020715-14-5678", "20000002", "Standard", 30);
+        Guest g3 = new Guest("Linda Tan", "990328-10-9012", "20000003", "Gold", 620);
 
         waitingQueue.enqueue(g1);
         waitingQueue.enqueue(g2);
@@ -81,11 +96,9 @@ public class BookingController {
 
         nextConfirmationNumber = 20000004;
 
-        if (bookingList.isEmpty()) {
-            bookingList.add(new Booking("BK0001", "10000001", "Alice Tan",
-                    "104", "Deluxe Suite", 350.00, "2026-07-28", 3));
-            nextBookingId = 2;
-        }
+        // Alice is already checked in in the application seed data. She is not an
+        // active reservation in this module, so no artificial cancellable booking is
+        // created for her. The first booking processed from this queue uses BK0001.
     }
 
     public Guest findGuestByIC(String icNo) {
@@ -148,18 +161,28 @@ public class BookingController {
      * 1. Dequeue the front guest
      * 2. Validate room is available
      * 3. Create a Booking record
-     * 4. Set room status to Occupied
+     * 4. Set room status to Reserved for Front Desk check-in
      *
-     * @return 1: success, -1: queue empty, -2: room not found, -3: room not ready
+     * @return 1: success, -1: queue empty, -2: room not found, -3: room not
+     *         ready, -4: invalid date, -5: invalid nights, -6: past date,
+     *         -7: too far in advance
      */
     public int processNextGuest(String roomNumber, String checkInDate, int numberOfNights) {
+        return processNextGuest(roomNumber, checkInDate, numberOfNights, "None");
+    }
+
+    /** Creates a booking for the next FIFO guest, including an optional stay request. */
+    public int processNextGuest(String roomNumber, String checkInDate, int numberOfNights, String specialRequest) {
         if (waitingQueue.isEmpty())
             return -1;
+
+        int dateValidation = validateStayPeriod(checkInDate, numberOfNights);
+        if (dateValidation != 1) return dateValidation;
 
         Room room = findRoomByNumber(roomNumber);
         if (room == null)
             return -2;
-        if (!"Ready for Check-In".equalsIgnoreCase(room.getRoomStatus()))
+        if (!isRoomAvailableForStay(room, checkInDate, numberOfNights, null))
             return -3;
 
         // Dequeue the front guest
@@ -170,16 +193,139 @@ public class BookingController {
         Booking booking = new Booking(bookingId, guest.getConfirmationNumber(),
                 guest.getGuestName(), room.getRoomNumber(), room.getRoomType(),
                 room.getPrice(), checkInDate, numberOfNights);
+        booking.setSpecialRequest(specialRequest);
         bookingList.add(booking);
 
-        // Update room status to Reserved (Booked but not yet checked-in at FrontDesk)
-        room.setRoomStatus("Reserved");
+        // Future reservations live in the Booking schedule and must not overwrite
+        // today's physical room condition. Only today's ready room becomes Reserved.
+        if (LocalDate.parse(checkInDate).equals(LocalDate.now())
+                && "Ready for Check-In".equalsIgnoreCase(room.getRoomStatus())) {
+            room.setRoomStatus("Reserved");
+        }
 
         // Sync with Guest record so FrontDesk System recognizes the reservation
-        guest.setCheckedIn(false);
+        guest.setBookingStatus("Reserved");
         guest.setAssignedRoomNumber(room.getRoomNumber());
+        guest.setRoomType(room.getRoomType());
         guest.setEffectiveRoomRate(room.getPrice());
+        guest.setCheckInDate(checkInDate);
+        guest.setNumberOfNights(numberOfNights);
+        guest.setSpecialRequest(booking.getSpecialRequest());
 
+        return 1;
+    }
+
+    /**
+     * Finds a booking by its human-readable booking ID. This is the primary
+     * lookup used by view, update, and cancellation operations.
+     */
+    public Booking findBookingById(String bookingId) {
+        refreshExpiredBookings();
+        if (bookingId == null || bookingId.trim().isEmpty()) return null;
+        for (int i = 0; i < bookingList.getNumberOfEntries(); i++) {
+            Booking booking = bookingList.get(i);
+            if (booking != null && bookingId.trim().equalsIgnoreCase(booking.getBookingId())) return booking;
+        }
+        return null;
+    }
+
+    /** Finds the latest booking belonging to a stay confirmation number. */
+    public Booking findBookingByConfirmation(String confirmationNumber) {
+        refreshExpiredBookings();
+        if (confirmationNumber == null || confirmationNumber.trim().isEmpty()) return null;
+        for (int i = bookingList.getNumberOfEntries() - 1; i >= 0; i--) {
+            Booking booking = bookingList.get(i);
+            if (booking != null && confirmationNumber.trim()
+                    .equalsIgnoreCase(booking.getGuestConfirmationNumber())) return booking;
+        }
+        return null;
+    }
+
+    /**
+     * Updates a not-yet-checked-in booking and synchronizes the matching Guest
+     * record and shared Room list. Return values: 1 success; -1 booking missing;
+     * -2 booking no longer editable; -3 room missing; -4 invalid date/nights;
+     * -5 selected room is not available for the requested date range.
+     */
+    public int updateBooking(String bookingId, String roomNumber, String checkInDate,
+            int numberOfNights, String specialRequest) {
+        Booking booking = findBookingById(bookingId);
+        if (booking == null) return -1;
+        if (!"Confirmed".equalsIgnoreCase(booking.getBookingStatus())) return -2;
+        int dateValidation = validateStayPeriod(checkInDate, numberOfNights);
+        if (dateValidation != 1) return dateValidation;
+
+        Room newRoom = findRoomByNumber(roomNumber);
+        if (newRoom == null) return -3;
+        if (!isRoomAvailableForStay(newRoom, checkInDate, numberOfNights, booking)) return -5;
+
+        String oldRoomNumber = booking.getRoomNumber();
+        booking.setRoomNumber(newRoom.getRoomNumber());
+        booking.setRoomType(newRoom.getRoomType());
+        booking.setRoomPrice(newRoom.getPrice());
+        booking.setCheckInDate(checkInDate.trim());
+        booking.setNumberOfNights(numberOfNights);
+        booking.setSpecialRequest(specialRequest);
+        if (LocalDate.parse(checkInDate).equals(LocalDate.now())
+                && "Ready for Check-In".equalsIgnoreCase(newRoom.getRoomStatus())) {
+            newRoom.setRoomStatus("Reserved");
+        }
+
+        Guest guest = findGuestByConfirmation(booking.getGuestConfirmationNumber());
+        if (guest != null) {
+            guest.setAssignedRoomNumber(newRoom.getRoomNumber());
+            guest.setRoomType(newRoom.getRoomType());
+            guest.setEffectiveRoomRate(newRoom.getPrice());
+            guest.setCheckInDate(checkInDate.trim());
+            guest.setNumberOfNights(numberOfNights);
+            guest.setSpecialRequest(booking.getSpecialRequest());
+        }
+
+        releaseRoomIfUnreserved(oldRoomNumber);
+        return 1;
+    }
+
+    /** Cancels a guest who is still waiting, preserving all other FIFO positions. */
+    public int cancelWaitingRegistration(String confirmationNumber) {
+        if (confirmationNumber == null || confirmationNumber.trim().isEmpty()) return -1;
+        boolean removed = false;
+        int entries = waitingQueue.getNumberOfEntries();
+        for (int i = 0; i < entries; i++) {
+            Guest guest = waitingQueue.dequeue();
+            if (!removed && confirmationNumber.trim().equalsIgnoreCase(guest.getConfirmationNumber())) {
+                removed = true;
+                guest.setBookingStatus("Cancelled");
+                guest.setSpecialRequest("Cancelled before room assignment");
+            } else {
+                waitingQueue.enqueue(guest);
+            }
+        }
+        return removed ? 1 : -1;
+    }
+
+    private boolean isValidIsoDate(String date) {
+        if (date == null || date.trim().isEmpty())
+            return false;
+        try {
+            LocalDate.parse(date.trim());
+            return true;
+        } catch (DateTimeParseException e) {
+            return false;
+        }
+    }
+
+    /**
+     * Validates a realistic stay period. Return: 1 valid, -4 malformed date,
+     * -5 nights outside 1..30, -6 check-in is in the past, -7 more than one
+     * year in advance.
+     */
+    public int validateStayPeriod(String checkInDate, int numberOfNights) {
+        if (!isValidIsoDate(checkInDate)) return -4;
+        if (numberOfNights <= 0 || numberOfNights > MAX_STAY_NIGHTS) return -5;
+        LocalDate checkIn = LocalDate.parse(checkInDate.trim());
+        LocalDate today = LocalDate.now();
+        if (checkIn.isBefore(today)) return -6;
+        if (checkIn.isAfter(today.plusDays(MAX_ADVANCE_BOOKING_DAYS))) return -7;
         return 1;
     }
 
@@ -199,37 +345,43 @@ public class BookingController {
      * @return 1: success, -1: booking not found, -2: already cancelled
      */
     public int cancelBooking(String bookingId) {
-        for (int i = 0; i < bookingList.getNumberOfEntries(); i++) {
-            Booking b = bookingList.get(i);
-            if (b.getBookingId().equalsIgnoreCase(bookingId.trim())) {
-                if ("Cancelled".equalsIgnoreCase(b.getBookingStatus())) {
-                    return -2;
-                }
-                b.setBookingStatus("Cancelled");
-                // Release the room
-                Room room = findRoomByNumber(b.getRoomNumber());
-                if (room != null) {
-                    room.setRoomStatus("Ready for Check-In");
-                }
-                // Reset Guest state to prevent stale data in FrontDesk billing
-                if (masterGuestRegistry != null) {
-                    Guest dummy = new Guest("", b.getGuestConfirmationNumber(), "", 0);
-                    Guest guest = masterGuestRegistry.search(dummy);
-                    if (guest != null && !guest.isCheckedIn()) {
+        return cancelBooking(bookingId, "No reason recorded", "Booking Staff");
+    }
+
+    /** Cancels a booking with an audit reason and staff identifier. */
+    public int cancelBooking(String bookingId, String reason, String staffName) {
+        Booking b = findBookingById(bookingId);
+        if (b == null) return -1;
+        if ("Cancelled".equalsIgnoreCase(b.getBookingStatus())) return -2;
+        if ("NoShow".equalsIgnoreCase(b.getBookingStatus())) return -5;
+
+                // Reset Guest state in Master Registry if not checked in / checked out
+        if (masterGuestRegistry != null) {
+                    Guest guest = findGuestByConfirmation(b.getGuestConfirmationNumber());
+                    if (guest != null) {
+                        if (guest.isCheckedIn()) {
+                            return -3; // Cannot cancel: Guest is currently checked in
+                        }
+                        if ("CheckedOut".equalsIgnoreCase(guest.getBookingStatus())) {
+                            return -4; // Cannot cancel: Guest has already checked out
+                        }
+                        guest.setBookingStatus("Cancelled");
                         guest.setAssignedRoomNumber(null);
+                        guest.setRoomType(null);
                         guest.setEffectiveRoomRate(0.0);
                     }
-                }
-                return 1;
-            }
         }
-        return -1;
+
+        b.recordCancellation(reason, staffName);
+        releaseRoomIfUnreserved(b.getRoomNumber());
+        return 1;
     }
 
     /**
      * Returns all booking records.
      */
     public ListInterface<Booking> getAllBookings() {
+        refreshExpiredBookings();
         return bookingList;
     }
 
@@ -262,6 +414,145 @@ public class BookingController {
         return available;
     }
 
+    /** Returns rooms that are usable and have no active booking overlap for the requested stay. */
+    public ListInterface<Room> getAvailableRooms(String checkInDate, int numberOfNights) {
+        ListInterface<Room> available = new MyArrayList<>();
+        if (validateStayPeriod(checkInDate, numberOfNights) != 1) return available;
+        refreshExpiredBookings();
+        for (int i = 0; i < roomList.getNumberOfEntries(); i++) {
+            Room room = roomList.get(i);
+            if (isRoomAvailableForStay(room, checkInDate, numberOfNights, null)) available.add(room);
+        }
+        return available;
+    }
+
+    /** Availability query that excludes the booking currently being edited. */
+    public ListInterface<Room> getAvailableRoomsForUpdate(String bookingId, String checkInDate, int numberOfNights) {
+        ListInterface<Room> available = new MyArrayList<>();
+        if (validateStayPeriod(checkInDate, numberOfNights) != 1) return available;
+        Booking excluded = findBookingById(bookingId);
+        for (int i = 0; i < roomList.getNumberOfEntries(); i++) {
+            Room room = roomList.get(i);
+            if (isRoomAvailableForStay(room, checkInDate, numberOfNights, excluded)) available.add(room);
+        }
+        return available;
+    }
+
+    private Guest findGuestByConfirmation(String confirmationNumber) {
+        if (confirmationNumber == null) return null;
+        if (masterGuestRegistry != null) {
+            Guest guest = masterGuestRegistry.search(new Guest("", confirmationNumber.trim(), "", 0));
+            if (guest != null) return guest;
+        }
+        for (int i = 0; i < registeredGuests.getNumberOfEntries(); i++) {
+            Guest guest = registeredGuests.get(i);
+            if (confirmationNumber.trim().equalsIgnoreCase(guest.getConfirmationNumber())) return guest;
+        }
+        return null;
+    }
+
+    private boolean isRoomAvailableForStay(Room room, String checkInDate, int numberOfNights, Booking excludedBooking) {
+        if (room == null) return false;
+        LocalDate requestedStart = LocalDate.parse(checkInDate.trim());
+        LocalDate requestedEnd = requestedStart.plusDays(numberOfNights);
+
+        // Physical condition blocks arrivals today. For a future reservation,
+        // housekeeping/occupancy is expected to change before arrival; only an
+        // explicit maintenance/out-of-service condition blocks advance sales.
+        String status = room.getRoomStatus();
+        if (!requestedStart.isAfter(LocalDate.now())
+                && !("Ready for Check-In".equalsIgnoreCase(status) || "Reserved".equalsIgnoreCase(status))) {
+            return false;
+        }
+        if ("Maintenance".equalsIgnoreCase(status) || "Out of Service".equalsIgnoreCase(status)) return false;
+
+        for (int i = 0; i < bookingList.getNumberOfEntries(); i++) {
+            Booking existing = bookingList.get(i);
+            if (existing == excludedBooking || existing == null
+                    || !room.getRoomNumber().equalsIgnoreCase(existing.getRoomNumber())
+                    || !isActiveReservation(existing)) continue;
+            try {
+                LocalDate existingStart = LocalDate.parse(existing.getCheckInDate());
+                LocalDate existingEnd = existingStart.plusDays(existing.getNumberOfNights());
+                if (requestedStart.isBefore(existingEnd) && existingStart.isBefore(requestedEnd)) return false;
+            } catch (DateTimeParseException ignored) {
+                return false;
+            }
+        }
+        if (masterGuestRegistry != null) {
+            ListInterface<Guest> guests = masterGuestRegistry.inOrderTraversal();
+            for (int i = 0; i < guests.getNumberOfEntries(); i++) {
+                Guest guest = guests.get(i);
+                if (!guest.isCheckedIn() || guest.getAssignedRoomNumber() == null
+                        || !room.getRoomNumber().equalsIgnoreCase(guest.getAssignedRoomNumber())) continue;
+                if (excludedBooking != null && excludedBooking.getGuestConfirmationNumber()
+                        .equalsIgnoreCase(guest.getConfirmationNumber())) continue;
+                try {
+                    LocalDate occupiedStart = LocalDate.parse(guest.getCheckInDate());
+                    LocalDate occupiedEnd = occupiedStart.plusDays(Math.max(1, guest.getNumberOfNights()));
+                    if (requestedStart.isBefore(occupiedEnd) && occupiedStart.isBefore(requestedEnd)) return false;
+                } catch (Exception ignored) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    private boolean isActiveReservation(Booking booking) {
+        return "Confirmed".equalsIgnoreCase(booking.getBookingStatus())
+                || "CheckedIn".equalsIgnoreCase(booking.getBookingStatus());
+    }
+
+    /** Marks an unconsumed reservation NoShow on the day after scheduled arrival. */
+    public int refreshExpiredBookings() {
+        int updated = 0;
+        LocalDate today = LocalDate.now();
+        for (int i = 0; i < bookingList.getNumberOfEntries(); i++) {
+            Booking booking = bookingList.get(i);
+            if ("Confirmed".equalsIgnoreCase(booking.getBookingStatus())
+                    && today.isAfter(LocalDate.parse(booking.getCheckInDate()))) {
+                booking.recordNoShow();
+                Guest guest = findGuestByConfirmation(booking.getGuestConfirmationNumber());
+                if (guest != null) guest.setBookingStatus("NoShow");
+                updated++;
+            }
+        }
+        if (updated > 0) refreshReservedRoomStatuses();
+        return updated;
+    }
+
+    private void refreshReservedRoomStatuses() {
+        for (int i = 0; i < roomList.getNumberOfEntries(); i++) {
+            Room room = roomList.get(i);
+            if ("Reserved".equalsIgnoreCase(room.getRoomStatus()) && !hasArrivalToday(room.getRoomNumber())) {
+                room.setRoomStatus("Ready for Check-In");
+            }
+        }
+    }
+
+    private boolean hasArrivalToday(String roomNumber) {
+        LocalDate today = LocalDate.now();
+        for (int i = 0; i < bookingList.getNumberOfEntries(); i++) {
+            Booking booking = bookingList.get(i);
+            if (roomNumber.equalsIgnoreCase(booking.getRoomNumber()) && isActiveReservation(booking)
+                    && today.equals(LocalDate.parse(booking.getCheckInDate()))) return true;
+        }
+        return false;
+    }
+
+    private void releaseRoomIfUnreserved(String roomNumber) {
+        Room room = findRoomByNumber(roomNumber);
+        if (room == null || !"Reserved".equalsIgnoreCase(room.getRoomStatus())) return;
+        for (int i = 0; i < bookingList.getNumberOfEntries(); i++) {
+            Booking booking = bookingList.get(i);
+            if (booking != null && roomNumber.equalsIgnoreCase(booking.getRoomNumber())
+                    && isActiveReservation(booking)
+                    && LocalDate.now().equals(LocalDate.parse(booking.getCheckInDate()))) return;
+        }
+        room.setRoomStatus("Ready for Check-In");
+    }
+
     /**
      * Returns all rooms.
      */
@@ -280,20 +571,37 @@ public class BookingController {
      */
     public ListInterface<Booking> getFilteredAndSortedBookings(
             String roomTypeFilter, int minNights, boolean sortByPriceAscending) {
+        return getFilteredAndSortedBookings(roomTypeFilter, "ALL", "", "", minNights, sortByPriceAscending);
+    }
 
+    /**
+     * Management report query: filters by room type, operational status,
+     * check-in date range, and minimum nights before applying the ADT sort.
+     */
+    public ListInterface<Booking> getFilteredAndSortedBookings(String roomTypeFilter, String statusFilter,
+            String startDate, String endDate, int minNights, boolean sortByPriceAscending) {
+
+        refreshExpiredBookings();
         ListInterface<Booking> filtered = new MyArrayList<>();
+        LocalDate start = parseOptionalDate(startDate);
+        LocalDate end = parseOptionalDate(endDate);
 
         for (int i = 0; i < bookingList.getNumberOfEntries(); i++) {
             Booking b = bookingList.get(i);
 
             // Search/filter by room type
             boolean typeMatch = "ALL".equalsIgnoreCase(roomTypeFilter)
-                    || b.getRoomType().equalsIgnoreCase(roomTypeFilter);
+                    || (b.getRoomType() != null && b.getRoomType().equalsIgnoreCase(roomTypeFilter));
 
             // Search/filter by minimum nights
             boolean nightsMatch = (minNights <= 0) || (b.getNumberOfNights() >= minNights);
+            boolean statusMatch = "ALL".equalsIgnoreCase(statusFilter)
+                    || b.getBookingStatus().equalsIgnoreCase(statusFilter);
+            LocalDate bookingDate = LocalDate.parse(b.getCheckInDate());
+            boolean dateMatch = (start == null || !bookingDate.isBefore(start))
+                    && (end == null || !bookingDate.isAfter(end));
 
-            if (typeMatch && nightsMatch) {
+            if (typeMatch && nightsMatch && statusMatch && dateMatch) {
                 filtered.add(b);
             }
         }
@@ -314,13 +622,36 @@ public class BookingController {
     }
 
     /**
+     * Report 1 management metrics for the supplied results.
+     * Index: [0]=active booking count, [1]=cancelled count, [2]=total nights,
+     * [3]=active booking value, [4]=average active-stay nights, [5]=no-shows.
+     */
+    public double[] getBookingMetrics(ListInterface<Booking> bookings) {
+        double[] metrics = new double[6];
+        for (int i = 0; i < bookings.getNumberOfEntries(); i++) {
+            Booking booking = bookings.get(i);
+            if ("Cancelled".equalsIgnoreCase(booking.getBookingStatus())) {
+                metrics[1]++;
+            } else if ("NoShow".equalsIgnoreCase(booking.getBookingStatus())) {
+                metrics[5]++;
+            } else {
+                metrics[0]++;
+                metrics[2] += booking.getNumberOfNights();
+                metrics[3] += booking.getTotalPrice();
+            }
+        }
+        metrics[4] = metrics[0] == 0 ? 0 : metrics[2] / metrics[0];
+        return metrics;
+    }
+
+    /**
      * Report 2: Guest Registration & Tier Analysis Report.
      * Filters all registered guests by loyalty tier and registration status
-     * (whether they are still waiting in queue or already checked in).
+     * (whether they are still waiting in queue or already processed/assigned).
      * Sorts by confirmation number.
      *
      * @param tierFilter    Loyalty tier filter ("ALL" for no filter)
-     * @param statusFilter  "Waiting", "Checked-In", or "ALL"
+     * @param statusFilter  "Waiting", "Processed", or "ALL"
      * @param sortAscending true for ascending confirmation number, false for
      *                      descending
      * @return Filtered and sorted list of guests
@@ -338,20 +669,11 @@ public class BookingController {
 
             // Search/filter by tier
             boolean tierMatch = "ALL".equalsIgnoreCase(tierFilter)
-                    || g.getLoyaltyTier().equalsIgnoreCase(tierFilter);
+                    || (g.getLoyaltyTier() != null && g.getLoyaltyTier().equalsIgnoreCase(tierFilter));
 
-            // Determine if guest is still waiting in queue
-            boolean isWaiting = isGuestInQueue(g.getConfirmationNumber(), queueSnapshot);
-
-            // Search/filter by status
-            boolean statusMatch;
-            if ("ALL".equalsIgnoreCase(statusFilter)) {
-                statusMatch = true;
-            } else if ("Waiting".equalsIgnoreCase(statusFilter)) {
-                statusMatch = isWaiting;
-            } else { // "Checked-In"
-                statusMatch = !isWaiting;
-            }
+            String operationalStatus = getGuestOperationalStatus(g, queueSnapshot);
+            boolean statusMatch = "ALL".equalsIgnoreCase(statusFilter)
+                    || operationalStatus.equalsIgnoreCase(statusFilter);
 
             if (tierMatch && statusMatch) {
                 filtered.add(g);
@@ -373,6 +695,22 @@ public class BookingController {
         return filtered;
     }
 
+    /** Returns the queue-aware lifecycle status used consistently in Report 2. */
+    public String getGuestOperationalStatus(Guest guest) {
+        return getGuestOperationalStatus(guest, waitingQueue.toList());
+    }
+
+    private String getGuestOperationalStatus(Guest guest, ListInterface<Guest> queueSnapshot) {
+        if (guest != null && isGuestInQueue(guest.getConfirmationNumber(), queueSnapshot)) return "Waiting";
+        if (guest == null || guest.getBookingStatus() == null) return "Unknown";
+        return "Reserved".equalsIgnoreCase(guest.getBookingStatus()) ? "Confirmed" : guest.getBookingStatus();
+    }
+
+    private LocalDate parseOptionalDate(String value) {
+        if (value == null || value.trim().isEmpty() || "ALL".equalsIgnoreCase(value.trim())) return null;
+        return LocalDate.parse(value.trim());
+    }
+
     /**
      * Checks if a guest's confirmation number exists in the queue snapshot.
      */
@@ -387,27 +725,34 @@ public class BookingController {
 
     /**
      * Returns summary statistics for the registration & tier report.
-     * Index: [0]=Total registered, [1]=Waiting, [2]=Checked-In,
-     * [3]=Platinum, [4]=Gold, [5]=Silver, [6]=Standard
+     * Index: [0]=Total registered, [1]=Waiting, [2]=Confirmed, [3]=CheckedIn,
+     * [4]=CheckedOut, [5]=Cancelled, [6]=NoShow, [7]=Platinum, [8]=Gold,
+     * [9]=Silver, [10]=Standard.
      */
     public int[] getRegistrationSummary() {
-        int[] summary = new int[7];
+        refreshExpiredBookings();
+        int[] summary = new int[11];
         summary[0] = registeredGuests.getNumberOfEntries();
-        summary[1] = waitingQueue.getNumberOfEntries();
-        summary[2] = summary[0] - summary[1];
-
         ListInterface<Guest> queueSnapshot = waitingQueue.toList();
+
         for (int i = 0; i < registeredGuests.getNumberOfEntries(); i++) {
             Guest g = registeredGuests.get(i);
+            String status = getGuestOperationalStatus(g, queueSnapshot);
+            if ("Waiting".equalsIgnoreCase(status)) summary[1]++;
+            else if ("Confirmed".equalsIgnoreCase(status) || "Reserved".equalsIgnoreCase(status)) summary[2]++;
+            else if ("CheckedIn".equalsIgnoreCase(status)) summary[3]++;
+            else if ("CheckedOut".equalsIgnoreCase(status)) summary[4]++;
+            else if ("Cancelled".equalsIgnoreCase(status)) summary[5]++;
+            else if ("NoShow".equalsIgnoreCase(status)) summary[6]++;
             String tier = g.getLoyaltyTier();
             if ("Platinum".equalsIgnoreCase(tier))
-                summary[3]++;
+                summary[7]++;
             else if ("Gold".equalsIgnoreCase(tier))
-                summary[4]++;
+                summary[8]++;
             else if ("Silver".equalsIgnoreCase(tier))
-                summary[5]++;
+                summary[9]++;
             else
-                summary[6]++;
+                summary[10]++;
         }
         return summary;
     }
