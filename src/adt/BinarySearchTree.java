@@ -2,7 +2,7 @@ package adt;
 
 /**
  * Author: Weisheng
- * Array-based Binary Search Tree implementation.
+ * Linked-node Binary Search Tree implementation.
  * Supports searching, insertion, deletion, range search, and traversal.
  */
 public class BinarySearchTree<T extends Comparable<T>> implements BSTInterface<T> {

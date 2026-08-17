@@ -32,6 +32,7 @@ public class Guest implements Comparable<Guest> {
     // === Loyalty (shared with Loyalty module) ===
     private String loyaltyTier;         // Platinum, Gold, Silver, Standard
     private int loyaltyPoints;
+    private int loyaltyExperience;      // Lifetime tier progress; redemption does not reduce it
 
     // === Guest Preferences ===
     private String specialRequest;      // e.g., "Extra pillows", "High floor"
@@ -69,6 +70,10 @@ public class Guest implements Comparable<Guest> {
         this.confirmationNumber = confirmationNumber;
         this.loyaltyTier = (loyaltyTier != null) ? loyaltyTier : "Standard";
         this.loyaltyPoints = loyaltyPoints;
+        // Existing callers only supplied points. Mirroring that value preserves the
+        // tier/seed meaning while allowing future rewards to spend points without
+        // reducing lifetime tier progress.
+        this.loyaltyExperience = loyaltyPoints;
         this.bookingStatus = "Registered";
         this.assignedRoomNumber = null;
         this.roomType = null;
@@ -170,6 +175,11 @@ public class Guest implements Comparable<Guest> {
     public int getLoyaltyPoints() { return loyaltyPoints; }
     public void setLoyaltyPoints(int loyaltyPoints) { this.loyaltyPoints = loyaltyPoints; }
 
+    public int getLoyaltyExperience() { return loyaltyExperience; }
+    public void setLoyaltyExperience(int loyaltyExperience) {
+        this.loyaltyExperience = Math.max(0, loyaltyExperience);
+    }
+
     // --- Preferences ---
     public String getSpecialRequest() { return specialRequest; }
     public void setSpecialRequest(String specialRequest) { this.specialRequest = specialRequest; }
@@ -222,6 +232,7 @@ public class Guest implements Comparable<Guest> {
                 ", Nights=" + numberOfNights +
                 ", Tier='" + loyaltyTier + '\'' +
                 ", Points=" + loyaltyPoints +
+                ", EXP=" + loyaltyExperience +
                 '}';
     }
 }

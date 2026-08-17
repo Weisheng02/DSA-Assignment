@@ -6,6 +6,10 @@ import boundary.BookingUI;
 import boundary.FrontDeskUI;
 import boundary.HousekeepingUI;
 import boundary.LoyaltyUI;
+import control.BookingController;
+import control.FrontDeskController;
+import control.HousekeepingController;
+import control.LoyaltyController;
 import entity.Guest;
 import entity.Booking;
 import entity.Room;
@@ -32,10 +36,17 @@ public class App {
         seedMasterData(masterGuestRegistry, sharedRoomList, sharedBookingList);
 
         // 3. Instantiate UI Subsystems passing shared memory references
-        BookingUI bookingUI = new BookingUI(sharedRoomList, sharedBookingList, masterGuestRegistry);
-        HousekeepingUI housekeepingUI = new HousekeepingUI(sharedRoomList);
-        FrontDeskUI frontDeskUI = new FrontDeskUI(masterGuestRegistry, sharedRoomList, sharedBookingList);
-        LoyaltyUI loyaltyUI = new LoyaltyUI(masterGuestRegistry);
+        LoyaltyController loyaltyController = new LoyaltyController(masterGuestRegistry);
+        BookingController bookingController = new BookingController(
+                sharedRoomList, masterGuestRegistry, sharedBookingList);
+        HousekeepingController housekeepingController = new HousekeepingController(sharedRoomList);
+        FrontDeskController frontDeskController = new FrontDeskController(
+                masterGuestRegistry, sharedRoomList, sharedBookingList, loyaltyController);
+
+        BookingUI bookingUI = new BookingUI(bookingController);
+        HousekeepingUI housekeepingUI = new HousekeepingUI(housekeepingController);
+        FrontDeskUI frontDeskUI = new FrontDeskUI(frontDeskController);
+        LoyaltyUI loyaltyUI = new LoyaltyUI(loyaltyController);
 
         do {
             System.out.println("\n==================================================");

@@ -1,11 +1,6 @@
 package boundary;
 
-import adt.BSTInterface;
-import adt.ListInterface;
 import control.BookingController;
-import entity.Booking;
-import entity.Guest;
-import entity.Room;
 
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
@@ -25,15 +20,6 @@ public class BookingUI {
 
     public BookingUI(BookingController controller) {
         this.controller = (controller != null) ? controller : new BookingController();
-    }
-
-    public BookingUI(ListInterface<Room> sharedRoomList, BSTInterface<Guest> masterGuestRegistry) {
-        this(new BookingController(sharedRoomList, masterGuestRegistry));
-    }
-
-    public BookingUI(ListInterface<Room> sharedRoomList, ListInterface<Booking> sharedBookingList,
-            BSTInterface<Guest> masterGuestRegistry) {
-        this(new BookingController(sharedRoomList, masterGuestRegistry, sharedBookingList));
     }
 
     public void displayMenu() {
@@ -118,7 +104,7 @@ public class BookingUI {
             return;
         }
 
-        Guest existingGuest = controller.findGuestByIC(ic);
+        BookingController.GuestView existingGuest = controller.findGuestByICView(ic);
         String name;
         String tier;
         int points = 0;
@@ -145,7 +131,7 @@ public class BookingUI {
             System.out.println("Assigned Default Loyalty Tier: [Standard] (0 pts)");
         }
 
-        Guest newGuest = controller.registerWalkInGuest(name, ic, tier, points);
+        BookingController.GuestView newGuest = controller.registerWalkInGuestView(name, ic, tier, points);
 
         System.out.println("\n==================================================");
         System.out.println("         WALK-IN REGISTRATION SUCCESSFUL          ");
@@ -160,21 +146,21 @@ public class BookingUI {
     }
 
     private void handleViewWaitingQueue() {
-        ListInterface<Guest> queueList = controller.getWaitingQueueList();
+        BookingController.GuestView[] queueList = controller.getWaitingQueueViews();
 
         System.out.println("\n==================================================");
         System.out.println("         CURRENT WAITING QUEUE (FIFO ORDER)       ");
         System.out.println("==================================================");
 
-        if (queueList.isEmpty()) {
+        if (queueList.length == 0) {
             System.out.println(" The waiting queue is empty. No guests waiting.");
         } else {
-            System.out.printf(" Total Guests Waiting: %d\n\n", queueList.getNumberOfEntries());
+            System.out.printf(" Total Guests Waiting: %d\n\n", queueList.length);
             System.out.printf("%-6s | %-15s | %-12s | %-10s\n",
                     "Pos", "Guest Name", "Confirm No", "Tier");
             System.out.println("-------+------------------+--------------+-----------");
-            for (int i = 0; i < queueList.getNumberOfEntries(); i++) {
-                Guest g = queueList.get(i);
+            for (int i = 0; i < queueList.length; i++) {
+                BookingController.GuestView g = queueList[i];
                 String posLabel = (i == 0) ? "#1 [NEXT]" : "#" + (i + 1);
                 System.out.printf("%-9s | %-15s | %-12s | %-10s\n",
                         posLabel, g.getGuestName(), g.getConfirmationNumber(), g.getLoyaltyTier());
@@ -186,7 +172,7 @@ public class BookingUI {
     private void handleProcessNextGuest() {
         System.out.println("\n--- Process Next Guest in Queue ---");
 
-        Guest nextGuest = controller.peekNextGuest();
+        BookingController.GuestView nextGuest = controller.peekNextGuestView();
         if (nextGuest == null) {
             System.out.println("The waiting queue is empty. No guest to process.");
             return;
@@ -212,8 +198,8 @@ public class BookingUI {
         }
 
         // Show date-aware availability, including a room with a non-overlapping future stay.
-        ListInterface<Room> availableRooms = controller.getAvailableRooms(checkInDate, nights);
-        if (availableRooms.isEmpty()) {
+        BookingController.RoomView[] availableRooms = controller.getAvailableRoomViews(checkInDate, nights);
+        if (availableRooms.length == 0) {
             System.out.println("\nNo rooms are available for the requested stay period.");
             System.out.println("Guest remains in the queue.");
             return;
@@ -230,7 +216,7 @@ public class BookingUI {
 
         switch (result) {
             case 1:
-                Booking lastBooking = controller.getLastBooking();
+                BookingController.BookingView lastBooking = controller.getLastBookingView();
                 System.out.println("\n==================================================");
                 System.out.println("       BOOKING CONFIRMED SUCCESSFULLY!            ");
                 System.out.println("==================================================");
@@ -273,7 +259,7 @@ public class BookingUI {
     }
 
     private void handleViewAllBookings() {
-        ListInterface<Booking> bookings = controller.getAllBookings();
+        BookingController.BookingView[] bookings = controller.getAllBookingViews();
 
         System.out.println(
                 "\n=========================================================================================================================");
@@ -282,15 +268,15 @@ public class BookingUI {
         System.out.println(
                 "=========================================================================================================================");
 
-        if (bookings.isEmpty()) {
+        if (bookings.length == 0) {
             System.out.println(" No bookings found.");
         } else {
             System.out.printf("%-8s | %-12s | %-12s | %-8s | %-12s | %-12s | %-6s | %-10s | %-10s\n",
                     "ID", "Guest", "Confirm No", "Room", "Check-In", "Check-Out", "Nights", "Total(RM)", "Status");
             System.out.println(
                     "-------------------------------------------------------------------------------------------------------------------------");
-            for (int i = 0; i < bookings.getNumberOfEntries(); i++) {
-                Booking b = bookings.get(i);
+            for (int i = 0; i < bookings.length; i++) {
+                BookingController.BookingView b = bookings[i];
                 System.out.printf("%-8s | %-12s | %-12s | %-8s | %-12s | %-12s | %-6d | %10.2f | %-10s\n",
                         b.getBookingId(),
                         truncate(b.getGuestName(), 12),
@@ -349,8 +335,8 @@ public class BookingUI {
         int choice = readIntInput();
         System.out.print("Enter search value: ");
         String value = scanner.nextLine().trim();
-        Booking booking = (choice == 2) ? controller.findBookingByConfirmation(value)
-                : controller.findBookingById(value);
+        BookingController.BookingView booking = (choice == 2) ? controller.findBookingByConfirmationView(value)
+                : controller.findBookingByIdView(value);
         if (booking == null) {
             System.out.println("No booking record was found.");
             return;
@@ -362,7 +348,7 @@ public class BookingUI {
         System.out.println("\n--- Modify Confirmed Booking ---");
         System.out.print("Enter Booking ID: ");
         String bookingId = scanner.nextLine().trim();
-        Booking existing = controller.findBookingById(bookingId);
+        BookingController.BookingView existing = controller.findBookingByIdView(bookingId);
         if (existing == null) {
             System.out.println("Error: Booking ID not found.");
             return;
@@ -386,7 +372,7 @@ public class BookingUI {
             printStayValidationError(stayValidation);
             return;
         }
-        ListInterface<Room> rooms = controller.getAvailableRoomsForUpdate(bookingId, checkInDate, nights);
+        BookingController.RoomView[] rooms = controller.getAvailableRoomViewsForUpdate(bookingId, checkInDate, nights);
         printRooms(rooms, "ROOMS AVAILABLE FOR NEW STAY PERIOD");
         System.out.print("New Room Number: ");
         String roomNumber = scanner.nextLine().trim();
@@ -396,7 +382,7 @@ public class BookingUI {
         int result = controller.updateBooking(bookingId, roomNumber, checkInDate, nights, specialRequest);
         if (result == 1) {
             System.out.println("Booking updated successfully and synchronized with the Front Desk guest record.");
-            printBookingDetails(controller.findBookingById(bookingId));
+            printBookingDetails(controller.findBookingByIdView(bookingId));
         } else if (result == -3) {
             System.out.println("Error: Room number not found.");
         } else if (result == -4 || result == -6 || result == -7) {
@@ -435,10 +421,10 @@ public class BookingUI {
             printStayValidationError(stayValidation);
             return;
         }
-        printRooms(controller.getAvailableRooms(checkInDate, nights), "AVAILABLE ROOMS FOR REQUESTED STAY");
+        printRooms(controller.getAvailableRoomViews(checkInDate, nights), "AVAILABLE ROOMS FOR REQUESTED STAY");
     }
 
-    private void printBookingDetails(Booking booking) {
+    private void printBookingDetails(BookingController.BookingView booking) {
         System.out.println("\n==================================================");
         System.out.println("                 BOOKING DETAILS                  ");
         System.out.println("==================================================");
@@ -469,17 +455,17 @@ public class BookingUI {
         System.out.println("==================================================");
     }
 
-    private void printRooms(ListInterface<Room> rooms, String title) {
+    private void printRooms(BookingController.RoomView[] rooms, String title) {
         System.out.println("\n==========================================================================");
         System.out.printf(" %-72s%n", title);
         System.out.println("==========================================================================");
-        if (rooms.isEmpty()) {
+        if (rooms.length == 0) {
             System.out.println(" No rooms match the requested availability.");
         } else {
             System.out.printf("%-10s | %-26s | %-16s | %-10s%n", "Room No", "Room Type", "Selected Dates", "Price/Night");
             System.out.println("==========================================================================");
-            for (int i = 0; i < rooms.getNumberOfEntries(); i++) {
-                Room room = rooms.get(i);
+            for (int i = 0; i < rooms.length; i++) {
+                BookingController.RoomView room = rooms[i];
                 System.out.printf("%-10s | %-26s | %-16s | RM %7.2f%n", room.getRoomNumber(),
                         room.getRoomType(), "Available", room.getPrice());
             }
@@ -512,18 +498,18 @@ public class BookingUI {
         int sortChoice = readChoiceNumber(1, 2);
         boolean ascending = sortChoice == 1;
 
-        ListInterface<Booking> filtered = controller.getFilteredAndSortedBookings(
+        BookingController.BookingView[] filtered = controller.getFilteredAndSortedBookingViews(
                 typeFilter, statusFilter, startDate, endDate, minNights, ascending);
 
         System.out.println(
                 "\n=============================================================================================");
-        System.out.printf(" REPORT RESULTS: %d booking(s) match criteria\n", filtered.getNumberOfEntries());
+        System.out.printf(" REPORT RESULTS: %d booking(s) match criteria\n", filtered.length);
         System.out.printf(" Filters: Type=%s | Status=%s | Check-In=%s to %s | Min Nights=%d | Total=%s%n",
                 typeFilter, statusFilter, startDate, endDate, minNights, ascending ? "Low to High" : "High to Low");
         System.out.println(
                 "=============================================================================================");
 
-        if (filtered.isEmpty()) {
+        if (filtered.length == 0) {
             System.out.println(" No bookings match the specified criteria.");
         } else {
             System.out.printf("%-8s | %-12s | %-8s | %-16s | %-12s | %-6s | %-10s | %-10s\n",
@@ -532,8 +518,8 @@ public class BookingUI {
                     "---------------------------------------------------------------------------------------------");
 
             double grandTotal = 0;
-            for (int i = 0; i < filtered.getNumberOfEntries(); i++) {
-                Booking b = filtered.get(i);
+            for (int i = 0; i < filtered.length; i++) {
+                BookingController.BookingView b = filtered[i];
                 System.out.printf("%-8s | %-12s | %-8s | %-16s | %-12s | %-6d | %10.2f | %-10s\n",
                         b.getBookingId(),
                         truncate(b.getGuestName(), 12),
@@ -550,8 +536,8 @@ public class BookingUI {
             }
             System.out.println(
                     "---------------------------------------------------------------------------------------------");
-            double[] metrics = controller.getBookingMetrics(filtered);
-            System.out.printf(" Total Value (excluding cancelled): RM %.2f%n", grandTotal);
+            double[] metrics = controller.getBookingViewMetrics(filtered);
+            System.out.printf(" Total Value (excluding cancelled and no-show): RM %.2f%n", grandTotal);
             System.out.printf(" Active / Cancelled / NoShow: %.0f / %.0f / %.0f | Average Stay: %.2f nights%n",
                     metrics[0], metrics[1], metrics[5], metrics[4]);
         }
@@ -572,7 +558,7 @@ public class BookingUI {
         int sortChoice = readChoiceNumber(1, 2);
         boolean ascending = sortChoice == 1;
 
-        ListInterface<Guest> filtered = controller.getFilteredAndSortedGuests(
+        BookingController.GuestView[] filtered = controller.getFilteredAndSortedGuestViews(
                 tierFilter, statusFilter, ascending);
 
         // Summary statistics
@@ -595,18 +581,18 @@ public class BookingUI {
         System.out.printf(" Standard Members   : %d\n", summary[10]);
         System.out.println("==================================================");
 
-        System.out.printf("\n Filtered Results: %d guest(s) match criteria\n\n", filtered.getNumberOfEntries());
+        System.out.printf("\n Filtered Results: %d guest(s) match criteria\n\n", filtered.length);
 
-        if (filtered.isEmpty()) {
+        if (filtered.length == 0) {
             System.out.println(" No guests match the specified criteria.");
         } else {
             System.out.printf("%-5s | %-15s | %-12s | %-10s | %-10s\n",
                     "Rank", "Guest Name", "Confirm No", "Tier", "Status");
             System.out.println("------+------------------+--------------+------------+-----------");
 
-            for (int i = 0; i < filtered.getNumberOfEntries(); i++) {
-                Guest g = filtered.get(i);
-                String status = controller.getGuestOperationalStatus(g);
+            for (int i = 0; i < filtered.length; i++) {
+                BookingController.GuestView g = filtered[i];
+                String status = g.getBookingStatus();
                 System.out.printf("#%-4d | %-15s | %-12s | %-10s | %-10s\n",
                         (i + 1), g.getGuestName(), g.getConfirmationNumber(),
                         g.getLoyaltyTier(), status);

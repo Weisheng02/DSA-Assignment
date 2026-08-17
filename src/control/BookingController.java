@@ -30,6 +30,98 @@ public class BookingController {
     private int nextConfirmationNumber;
     private int nextBookingId;
 
+    /** Immutable boundary-safe projection of a Guest record. */
+    public static final class GuestView {
+        private final String guestName, icNo, confirmationNumber, loyaltyTier, bookingStatus;
+        private final int loyaltyPoints;
+
+        private GuestView(Guest guest, String operationalStatus) {
+            guestName = guest == null ? "" : guest.getGuestName();
+            icNo = guest == null ? "" : guest.getIcNo();
+            confirmationNumber = guest == null ? "" : guest.getConfirmationNumber();
+            loyaltyTier = guest == null ? "" : guest.getLoyaltyTier();
+            loyaltyPoints = guest == null ? 0 : guest.getLoyaltyPoints();
+            bookingStatus = operationalStatus == null ? "Unknown" : operationalStatus;
+        }
+
+        public String getGuestName() { return guestName; }
+        public String getIcNo() { return icNo; }
+        public String getConfirmationNumber() { return confirmationNumber; }
+        public String getLoyaltyTier() { return loyaltyTier; }
+        public int getLoyaltyPoints() { return loyaltyPoints; }
+        public String getBookingStatus() { return bookingStatus; }
+    }
+
+    /** Immutable boundary-safe projection of a Booking record. */
+    public static final class BookingView {
+        private final String bookingId, guestName, guestConfirmationNumber, roomNumber, roomType,
+                checkInDate, checkOutDate, bookingStatus, specialRequest, bookingCreatedDate,
+                actualCheckInDate, actualCheckOutDate, noShowDate, cancellationDate,
+                cancelledBy, cancellationReason;
+        private final int numberOfNights, actualNightsStayed;
+        private final double roomPrice, totalPrice;
+
+        private BookingView(Booking booking) {
+            bookingId = booking.getBookingId();
+            guestName = booking.getGuestName();
+            guestConfirmationNumber = booking.getGuestConfirmationNumber();
+            roomNumber = booking.getRoomNumber();
+            roomType = booking.getRoomType();
+            checkInDate = booking.getCheckInDate();
+            checkOutDate = booking.getCheckOutDate();
+            numberOfNights = booking.getNumberOfNights();
+            roomPrice = booking.getRoomPrice();
+            totalPrice = booking.getTotalPrice();
+            bookingStatus = booking.getBookingStatus();
+            specialRequest = booking.getSpecialRequest();
+            bookingCreatedDate = booking.getBookingCreatedDate();
+            actualCheckInDate = booking.getActualCheckInDate();
+            actualCheckOutDate = booking.getActualCheckOutDate();
+            actualNightsStayed = booking.getActualNightsStayed();
+            noShowDate = booking.getNoShowDate();
+            cancellationDate = booking.getCancellationDate();
+            cancelledBy = booking.getCancelledBy();
+            cancellationReason = booking.getCancellationReason();
+        }
+
+        public String getBookingId() { return bookingId; }
+        public String getGuestName() { return guestName; }
+        public String getGuestConfirmationNumber() { return guestConfirmationNumber; }
+        public String getRoomNumber() { return roomNumber; }
+        public String getRoomType() { return roomType; }
+        public String getCheckInDate() { return checkInDate; }
+        public String getCheckOutDate() { return checkOutDate; }
+        public int getNumberOfNights() { return numberOfNights; }
+        public double getRoomPrice() { return roomPrice; }
+        public double getTotalPrice() { return totalPrice; }
+        public String getBookingStatus() { return bookingStatus; }
+        public String getSpecialRequest() { return specialRequest; }
+        public String getBookingCreatedDate() { return bookingCreatedDate; }
+        public String getActualCheckInDate() { return actualCheckInDate; }
+        public String getActualCheckOutDate() { return actualCheckOutDate; }
+        public int getActualNightsStayed() { return actualNightsStayed; }
+        public String getNoShowDate() { return noShowDate; }
+        public String getCancellationDate() { return cancellationDate; }
+        public String getCancelledBy() { return cancelledBy; }
+        public String getCancellationReason() { return cancellationReason; }
+    }
+
+    /** Immutable boundary-safe projection of a Room record. */
+    public static final class RoomView {
+        private final String roomNumber, roomType;
+        private final double price;
+
+        private RoomView(Room room) {
+            roomNumber = room.getRoomNumber();
+            roomType = room.getRoomType();
+            price = room.getPrice();
+        }
+
+        public String getRoomNumber() { return roomNumber; }
+        public String getRoomType() { return roomType; }
+        public double getPrice() { return price; }
+    }
+
     public BookingController() {
         this(null, null, null, null);
     }
@@ -138,10 +230,13 @@ public class BookingController {
     }
 
     public Guest findGuestByIC(String icNo) {
-        if (icNo == null || icNo.trim().isEmpty() || masterGuestRegistry == null)
-            return null;
+        if (icNo == null || icNo.trim().isEmpty()) return null;
         String cleanQuery = icNo.trim().replaceAll("[^a-zA-Z0-9]", "").toLowerCase();
-        ListInterface<Guest> allGuests = masterGuestRegistry.inOrderTraversal();
+        // The master registry is available in the integrated App flow.  In
+        // standalone BookingUI mode, however, registeredGuests is the local
+        // source of truth and must still be searchable by IC.
+        ListInterface<Guest> allGuests = masterGuestRegistry != null
+                ? masterGuestRegistry.inOrderTraversal() : registeredGuests;
         for (int i = 0; i < allGuests.getNumberOfEntries(); i++) {
             Guest g = allGuests.get(i);
             if (g.getIcNo() != null) {
@@ -152,6 +247,12 @@ public class BookingController {
             }
         }
         return null;
+    }
+
+    /** Boundary-safe lookup projection; keeps Entity types inside the control layer. */
+    public GuestView findGuestByICView(String icNo) {
+        Guest guest = findGuestByIC(icNo);
+        return guest == null ? null : toGuestView(guest);
     }
 
     public Guest registerWalkInGuest(String guestName, String loyaltyTier) {
@@ -174,6 +275,10 @@ public class BookingController {
         return newGuest;
     }
 
+    public GuestView registerWalkInGuestView(String guestName, String icNo, String loyaltyTier, int loyaltyPoints) {
+        return toGuestView(registerWalkInGuest(guestName, icNo, loyaltyTier, loyaltyPoints));
+    }
+
     private boolean isConfirmationNumberUsed(String confirmationNumber) {
         ListInterface<Guest> guests = getRegisteredGuestsSnapshot();
         for (int i = 0; i < guests.getNumberOfEntries(); i++) {
@@ -190,11 +295,23 @@ public class BookingController {
         return waitingQueue.toList();
     }
 
+    public GuestView[] getWaitingQueueViews() {
+        ListInterface<Guest> guests = waitingQueue.toList();
+        GuestView[] views = new GuestView[guests.getNumberOfEntries()];
+        for (int i = 0; i < views.length; i++) views[i] = toGuestView(guests.get(i));
+        return views;
+    }
+
     /**
      * Peeks at the next guest to be served (front of queue).
      */
     public Guest peekNextGuest() {
         return waitingQueue.getFront();
+    }
+
+    public GuestView peekNextGuestView() {
+        Guest guest = peekNextGuest();
+        return guest == null ? null : toGuestView(guest);
     }
 
     /**
@@ -300,6 +417,16 @@ public class BookingController {
         return null;
     }
 
+    public BookingView findBookingByIdView(String bookingId) {
+        Booking booking = findBookingById(bookingId);
+        return booking == null ? null : new BookingView(booking);
+    }
+
+    public BookingView findBookingByConfirmationView(String confirmationNumber) {
+        Booking booking = findBookingByConfirmation(confirmationNumber);
+        return booking == null ? null : new BookingView(booking);
+    }
+
     /**
      * Updates a not-yet-checked-in booking and synchronizes the matching Guest
      * record and shared Room list. Return values: 1 success; -1 booking missing;
@@ -397,6 +524,11 @@ public class BookingController {
         return bookingList.get(bookingList.getNumberOfEntries() - 1);
     }
 
+    public BookingView getLastBookingView() {
+        Booking booking = getLastBooking();
+        return booking == null ? null : new BookingView(booking);
+    }
+
     /**
      * Cancel a booking by booking ID. Sets status to "Cancelled" and
      * releases the room back to "Ready for Check-In".
@@ -414,21 +546,21 @@ public class BookingController {
         if ("Cancelled".equalsIgnoreCase(b.getBookingStatus())) return -2;
         if ("NoShow".equalsIgnoreCase(b.getBookingStatus())) return -5;
 
-                // Reset Guest state in Master Registry if not checked in / checked out
-        if (masterGuestRegistry != null) {
-                    Guest guest = findGuestByConfirmation(b.getGuestConfirmationNumber());
-                    if (guest != null) {
-                        if (guest.isCheckedIn()) {
-                            return -3; // Cannot cancel: Guest is currently checked in
-                        }
-                        if ("CheckedOut".equalsIgnoreCase(guest.getBookingStatus())) {
-                            return -4; // Cannot cancel: Guest has already checked out
-                        }
-                        guest.setBookingStatus("Cancelled");
-                        guest.setAssignedRoomNumber(null);
-                        guest.setRoomType(null);
-                        guest.setEffectiveRoomRate(0.0);
-                    }
+        // Reset Guest state in either the shared master registry or the local
+        // standalone registry.  Cancellation must not leave the Guest marked
+        // Reserved merely because the controller has no master registry.
+        Guest guest = findGuestByConfirmation(b.getGuestConfirmationNumber());
+        if (guest != null) {
+            if (guest.isCheckedIn()) {
+                return -3; // Cannot cancel: Guest is currently checked in
+            }
+            if ("CheckedOut".equalsIgnoreCase(guest.getBookingStatus())) {
+                return -4; // Cannot cancel: Guest has already checked out
+            }
+            guest.setBookingStatus("Cancelled");
+            guest.setAssignedRoomNumber(null);
+            guest.setRoomType(null);
+            guest.setEffectiveRoomRate(0.0);
         }
 
         b.recordCancellation(reason, staffName);
@@ -442,6 +574,10 @@ public class BookingController {
     public ListInterface<Booking> getAllBookings() {
         refreshExpiredBookings();
         return bookingList;
+    }
+
+    public BookingView[] getAllBookingViews() {
+        return toBookingViews(getAllBookings());
     }
 
     /**
@@ -485,6 +621,10 @@ public class BookingController {
         return available;
     }
 
+    public RoomView[] getAvailableRoomViews(String checkInDate, int numberOfNights) {
+        return toRoomViews(getAvailableRooms(checkInDate, numberOfNights));
+    }
+
     /** Availability query that excludes the booking currently being edited. */
     public ListInterface<Room> getAvailableRoomsForUpdate(String bookingId, String checkInDate, int numberOfNights) {
         ListInterface<Room> available = new MyArrayList<>();
@@ -495,6 +635,10 @@ public class BookingController {
             if (isRoomAvailableForStay(room, checkInDate, numberOfNights, excluded)) available.add(room);
         }
         return available;
+    }
+
+    public RoomView[] getAvailableRoomViewsForUpdate(String bookingId, String checkInDate, int numberOfNights) {
+        return toRoomViews(getAvailableRoomsForUpdate(bookingId, checkInDate, numberOfNights));
     }
 
     private Guest findGuestByConfirmation(String confirmationNumber) {
@@ -680,6 +824,12 @@ public class BookingController {
         return filtered;
     }
 
+    public BookingView[] getFilteredAndSortedBookingViews(String roomTypeFilter, String statusFilter,
+            String startDate, String endDate, int minNights, boolean sortByPriceAscending) {
+        return toBookingViews(getFilteredAndSortedBookings(roomTypeFilter, statusFilter, startDate, endDate,
+                minNights, sortByPriceAscending));
+    }
+
     /**
      * Report 1 management metrics for the supplied results.
      * Index: [0]=active booking count, [1]=cancelled count, [2]=total nights,
@@ -694,6 +844,23 @@ public class BookingController {
             } else if ("NoShow".equalsIgnoreCase(booking.getBookingStatus())) {
                 metrics[5]++;
             } else {
+                metrics[0]++;
+                metrics[2] += booking.getNumberOfNights();
+                metrics[3] += booking.getTotalPrice();
+            }
+        }
+        metrics[4] = metrics[0] == 0 ? 0 : metrics[2] / metrics[0];
+        return metrics;
+    }
+
+    public double[] getBookingViewMetrics(BookingView[] bookings) {
+        double[] metrics = new double[6];
+        if (bookings == null) return metrics;
+        for (BookingView booking : bookings) {
+            if (booking == null) continue;
+            if ("Cancelled".equalsIgnoreCase(booking.getBookingStatus())) metrics[1]++;
+            else if ("NoShow".equalsIgnoreCase(booking.getBookingStatus())) metrics[5]++;
+            else {
                 metrics[0]++;
                 metrics[2] += booking.getNumberOfNights();
                 metrics[3] += booking.getTotalPrice();
@@ -718,6 +885,10 @@ public class BookingController {
     public ListInterface<Guest> getFilteredAndSortedGuests(
             String tierFilter, String statusFilter, boolean sortAscending) {
 
+        // Expiry changes the operational status used by this report.  Refresh
+        // before applying the status filter so Confirmed cannot include a
+        // booking that is already a NoShow.
+        refreshExpiredBookings();
         ListInterface<Guest> filtered = new MyArrayList<>();
 
         // Build a list of confirmation numbers currently in the queue
@@ -755,6 +926,17 @@ public class BookingController {
         return filtered;
     }
 
+    public GuestView[] getFilteredAndSortedGuestViews(String tierFilter, String statusFilter, boolean sortAscending) {
+        ListInterface<Guest> guests = getFilteredAndSortedGuests(tierFilter, statusFilter, sortAscending);
+        GuestView[] views = new GuestView[guests.getNumberOfEntries()];
+        ListInterface<Guest> queueSnapshot = waitingQueue.toList();
+        for (int i = 0; i < views.length; i++) {
+            Guest guest = guests.get(i);
+            views[i] = toGuestView(guest, getGuestOperationalStatus(guest, queueSnapshot));
+        }
+        return views;
+    }
+
     /** Returns the queue-aware lifecycle status used consistently in Report 2. */
     public String getGuestOperationalStatus(Guest guest) {
         return getGuestOperationalStatus(guest, waitingQueue.toList());
@@ -768,7 +950,11 @@ public class BookingController {
 
     private LocalDate parseOptionalDate(String value) {
         if (value == null || value.trim().isEmpty() || "ALL".equalsIgnoreCase(value.trim())) return null;
-        return LocalDate.parse(value.trim());
+        try {
+            return LocalDate.parse(value.trim());
+        } catch (DateTimeParseException e) {
+            return null;
+        }
     }
 
     /**
@@ -781,6 +967,26 @@ public class BookingController {
             }
         }
         return false;
+    }
+
+    private GuestView toGuestView(Guest guest) {
+        return toGuestView(guest, getGuestOperationalStatus(guest));
+    }
+
+    private GuestView toGuestView(Guest guest, String operationalStatus) {
+        return new GuestView(guest, operationalStatus);
+    }
+
+    private BookingView[] toBookingViews(ListInterface<Booking> bookings) {
+        BookingView[] views = new BookingView[bookings.getNumberOfEntries()];
+        for (int i = 0; i < views.length; i++) views[i] = new BookingView(bookings.get(i));
+        return views;
+    }
+
+    private RoomView[] toRoomViews(ListInterface<Room> rooms) {
+        RoomView[] views = new RoomView[rooms.getNumberOfEntries()];
+        for (int i = 0; i < views.length; i++) views[i] = new RoomView(rooms.get(i));
+        return views;
     }
 
     /**

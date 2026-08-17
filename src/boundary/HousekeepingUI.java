@@ -1,10 +1,8 @@
 package boundary;
 
-import adt.ListInterface;
 import control.HousekeepingController;
-import entity.HousekeepingLog;
-import entity.Room;
 
+import java.util.NoSuchElementException;
 import java.util.Scanner;
 
 /**
@@ -22,10 +20,6 @@ public class HousekeepingUI {
 
     public HousekeepingUI(HousekeepingController controller) {
         this.controller = (controller != null) ? controller : new HousekeepingController();
-    }
-
-    public HousekeepingUI(ListInterface<Room> sharedRoomList) {
-        this(new HousekeepingController(sharedRoomList));
     }
 
     public void displayMenu() {
@@ -51,8 +45,13 @@ public class HousekeepingUI {
             System.out.println("--------------------------------------------------");
             System.out.print("Enter your choice (0-7): ");
 
+            String choiceInput = readLineOrNull();
+            if (choiceInput == null) {
+                System.out.println("Input ended. Returning to main menu...");
+                break;
+            }
             try {
-                choice = Integer.parseInt(scanner.nextLine().trim());
+                choice = Integer.parseInt(choiceInput.trim());
             } catch (NumberFormatException e) {
                 choice = -1;
             }
@@ -72,34 +71,34 @@ public class HousekeepingUI {
     }
 
     private void viewAllRooms() {
-        ListInterface<Room> rooms = controller.getAllRooms();
         System.out.println("\n----- All Rooms -----");
         System.out.printf("%-10s%-20s%-22s%-10s%n", "Room No", "Type", "Status", "Price");
-        for (int i = 0; i < rooms.getNumberOfEntries(); i++) {
-            Room r = rooms.get(i);
-            System.out.printf("%-10s%-20s%-22s%-10.2f%n",
-                    r.getRoomNumber(), r.getRoomType(), r.getRoomStatus(), r.getPrice());
+        for (String line : controller.getRoomDisplayLines()) {
+            System.out.println(line);
         }
     }
 
     private void advanceRoomStatus() {
         System.out.print("Enter Room Number: ");
-        String roomNumber = scanner.nextLine().trim();
+        String roomNumberInput = readLineOrNull();
+        if (roomNumberInput == null) return;
+        String roomNumber = roomNumberInput.trim();
 
-        Room rExist = controller.findRoomByNumber(roomNumber);
-        if (rExist == null) {
+        if (controller.getRoomStatus(roomNumber) == null) {
             System.out.println("Error: Room " + roomNumber + " not found.");
             return;
         }
 
         System.out.print("Enter Staff Name: ");
-        String staffName = scanner.nextLine().trim();
+        String staffNameInput = readLineOrNull();
+        if (staffNameInput == null) return;
+        String staffName = staffNameInput.trim();
 
         int result = controller.advanceRoomStatus(roomNumber, staffName);
         switch (result) {
             case 1:
-                Room r = controller.findRoomByNumber(roomNumber);
-                System.out.println("Room " + roomNumber + " advanced to: " + r.getRoomStatus());
+                System.out.println("Room " + roomNumber + " advanced to: "
+                        + controller.getRoomStatus(roomNumber));
                 break;
             case -1:
                 System.out.println("Room not found.");
@@ -110,15 +109,19 @@ public class HousekeepingUI {
             case -3:
                 System.out.println("Room is not currently in the housekeeping cycle (e.g. Occupied).");
                 break;
+            case -4:
+                System.out.println("Staff name cannot be blank.");
+                break;
         }
     }
 
     private void manualSetStatus() {
         System.out.print("Enter Room Number: ");
-        String roomNumber = scanner.nextLine().trim();
+        String roomNumberInput = readLineOrNull();
+        if (roomNumberInput == null) return;
+        String roomNumber = roomNumberInput.trim();
 
-        Room rExist = controller.findRoomByNumber(roomNumber);
-        if (rExist == null) {
+        if (controller.getRoomStatus(roomNumber) == null) {
             System.out.println("Error: Room " + roomNumber + " not found.");
             return;
         }
@@ -128,9 +131,13 @@ public class HousekeepingUI {
             System.out.println("  - " + s);
         }
         System.out.print("Enter New Status: ");
-        String newStatus = scanner.nextLine().trim();
+        String newStatusInput = readLineOrNull();
+        if (newStatusInput == null) return;
+        String newStatus = newStatusInput.trim();
         System.out.print("Enter Staff Name: ");
-        String staffName = scanner.nextLine().trim();
+        String staffNameInput = readLineOrNull();
+        if (staffNameInput == null) return;
+        String staffName = staffNameInput.trim();
 
         int result = controller.setRoomStatus(roomNumber, newStatus, staffName);
         switch (result) {
@@ -143,21 +150,37 @@ public class HousekeepingUI {
             case -2:
                 System.out.println("Invalid status entered.");
                 break;
+            case 0:
+                System.out.println("Room is already at that status; no task was logged.");
+                break;
+            case -4:
+                System.out.println("Staff name cannot be blank.");
+                break;
         }
     }
 
     private void rollbackChange() {
-        HousekeepingLog last = controller.peekLastChange();
+        String last = controller.getLastChangeDisplayText();
         if (last == null) {
             System.out.println("No changes to roll back.");
             return;
         }
         System.out.println("About to roll back: " + last);
         System.out.print("Confirm rollback? (Y/N): ");
-        String confirm = scanner.nextLine().trim();
+        String confirmInput = readLineOrNull();
+        if (confirmInput == null) return;
+        String confirm = confirmInput.trim();
         if (confirm.equalsIgnoreCase("Y")) {
-            controller.rollbackLastChange();
-            System.out.println("Rolled back successfully.");
+            int result = controller.rollbackLastChange();
+            if (result == 1) {
+                System.out.println("Rolled back successfully.");
+            } else if (result == -2) {
+                System.out.println("Rollback blocked: the room was changed externally; no status was overwritten.");
+            } else if (result == -1) {
+                System.out.println("Rollback blocked: the room no longer exists.");
+            } else {
+                System.out.println("No changes to roll back.");
+            }
         } else {
             System.out.println("Rollback cancelled.");
         }
@@ -177,39 +200,53 @@ public class HousekeepingUI {
 
     private void filteredTaskLogReport() {
         System.out.print("Filter by Room Number (Enter for ALL): ");
-        String roomFilter = scanner.nextLine().trim();
+        String roomFilterInput = readLineOrNull();
+        if (roomFilterInput == null) return;
+        String roomFilter = roomFilterInput.trim();
         System.out.print("Filter by New Status (Enter for ALL): ");
-        String statusFilter = scanner.nextLine().trim();
+        String statusFilterInput = readLineOrNull();
+        if (statusFilterInput == null) return;
+        String statusFilter = statusFilterInput.trim();
         System.out.print("Sort newest first? (Y/N): ");
-        boolean newestFirst = scanner.nextLine().trim().equalsIgnoreCase("Y");
+        String sortInput = readLineOrNull();
+        if (sortInput == null) return;
+        boolean newestFirst = sortInput.trim().equalsIgnoreCase("Y");
 
-        ListInterface<HousekeepingLog> logs = controller.getFilteredTaskLog(
+        String[] logs = controller.getFilteredTaskLogDisplayLines(
                 roomFilter.isEmpty() ? "ALL" : roomFilter,
                 statusFilter.isEmpty() ? "ALL" : statusFilter,
                 newestFirst);
 
         System.out.println("\n===== Task Log Report =====");
-        if (logs.isEmpty()) {
+        if (logs.length == 0) {
             System.out.println("No matching records.");
         }
-        for (int i = 0; i < logs.getNumberOfEntries(); i++) {
-            System.out.println(logs.get(i));
+        for (String line : logs) {
+            System.out.println(line);
         }
         System.out.println("============================");
     }
 
     private void roomsNeedingAttentionReport() {
-        ListInterface<Room> rooms = controller.getRoomsNeedingAttention();
+        String[] rooms = controller.getRoomsNeedingAttentionDisplayLines();
 
         System.out.println("\n===== Rooms Needing Attention (Not Ready) =====");
-        if (rooms.isEmpty()) {
+        if (rooms.length == 0) {
             System.out.println("All rooms are Ready for Check-In.");
         }
-        for (int i = 0; i < rooms.getNumberOfEntries(); i++) {
-            Room r = rooms.get(i);
-            System.out.println(r.getRoomNumber() + " - " + r.getRoomStatus());
+        for (String line : rooms) {
+            System.out.println(line);
         }
         System.out.println("================================================");
+    }
+
+    /** Reads one menu line without allowing an exhausted/closed input stream to crash the UI. */
+    private String readLineOrNull() {
+        try {
+            return scanner.nextLine();
+        } catch (NoSuchElementException | IllegalStateException e) {
+            return null;
+        }
     }
 
     public static void main(String[] args) {

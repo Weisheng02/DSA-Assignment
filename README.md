@@ -1,18 +1,35 @@
-## Getting Started
+# TARUMT Resort Management System
 
-Welcome to the VS Code Java world. Here is a guideline to help you get started to write Java code in Visual Studio Code.
+Console-based Java application for the BMCS2063 Data Structures and Algorithms assignment.
 
-## Folder Structure
+## Requirements
 
-The workspace contains two folders by default, where:
+- Java Development Kit (JDK) 8 or newer
+- No external libraries or data files are required
 
-- `src`: the folder to maintain sources
-- `lib`: the folder to maintain dependencies
+## Run from a terminal
 
-Meanwhile, the compiled output files will be generated in the `bin` folder by default.
+From the project root:
 
-> If you want to customize the folder structure, open `.vscode/settings.json` and update the related settings there.
+```sh
+mkdir -p bin
+javac -d bin $(find src -name '*.java')
+java -cp bin App
+```
 
-## Dependency Management
+The application starts at the main menu. Select one of the four modules and enter `0` to return to the preceding menu or exit the program.
 
-The `JAVA PROJECTS` view allows you to manage your dependencies. More details can be found [here](https://github.com/microsoft/vscode-java-dependency#manage-dependencies).
+## Modules
+
+1. Walk-In Registrations and Standard Booking
+2. Housekeeping and Task Log
+3. Front-Desk Service
+4. Loyalty and Rewards Service
+
+## Project structure
+
+- `src/adt` - Custom list, queue, stack and binary-search-tree implementations
+- `src/entity` - Application entities
+- `src/control` - Business logic
+- `src/boundary` - Console user interfaces
+- `src/App.java` - Application entry point

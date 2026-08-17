@@ -65,8 +65,39 @@ public class HousekeepingController {
         return roomList;
     }
 
+    /**
+     * Supplies presentation-ready room rows to the boundary without exposing
+     * entity or ADT types across the boundary/control boundary.
+     */
+    public String[] getRoomDisplayLines() {
+        String[] lines = new String[roomList.getNumberOfEntries()];
+        for (int i = 0; i < roomList.getNumberOfEntries(); i++) {
+            Room room = roomList.get(i);
+            lines[i] = String.format("%-10s%-20s%-22s%-10.2f",
+                    room.getRoomNumber(), room.getRoomType(),
+                    room.getRoomStatus(), room.getPrice());
+        }
+        return lines;
+    }
+
+    /** Returns a room status for UI display, or null when the room is absent. */
+    public String getRoomStatus(String roomNumber) {
+        Room room = findRoomByNumber(roomNumber);
+        return room == null ? null : room.getRoomStatus();
+    }
+
     public String[] getStatusSequence() {
-        return STATUS_SEQUENCE;
+        // Do not expose the backing array: callers (including the UI) should
+        // not be able to corrupt the workflow for every controller instance.
+        return STATUS_SEQUENCE.clone();
+    }
+
+    private boolean hasValidStaffName(String staffName) {
+        return staffName != null && !staffName.trim().isEmpty();
+    }
+
+    private boolean sameStatus(String first, String second) {
+        return first != null && second != null && first.trim().equalsIgnoreCase(second.trim());
     }
 
     private int getStatusIndex(String status) {
@@ -79,11 +110,14 @@ public class HousekeepingController {
 
     /**
      * Advances a room to the NEXT stage in the cleaning sequence.
-     * @return 1 success | -1 room not found | -2 already at final stage | -3 room not currently in the housekeeping cycle (e.g. Occupied)
+     * @return 1 success | -1 room not found | -2 already at final stage |
+     *         -3 room not currently in the housekeeping cycle (e.g. Occupied) |
+     *         -4 staff name is blank
      */
     public int advanceRoomStatus(String roomNumber, String staffName) {
         Room room = findRoomByNumber(roomNumber);
         if (room == null) return -1;
+        if (!hasValidStaffName(staffName)) return -4;
 
         int currentIndex = getStatusIndex(room.getRoomStatus());
         if (currentIndex == -1) return -3;
@@ -93,44 +127,71 @@ public class HousekeepingController {
         String newStatus = STATUS_SEQUENCE[currentIndex + 1];
         room.setRoomStatus(newStatus);
 
-        taskLogStack.push(new HousekeepingLog(roomNumber, previousStatus, newStatus, staffName));
+        taskLogStack.push(new HousekeepingLog(roomNumber.trim(), previousStatus, newStatus, staffName.trim()));
         return 1;
     }
 
     /**
      * Lets a supervisor directly set/correct a room's status (e.g. a late check-out
      * request forces a "Ready for Check-In" room back to "Dirty"). Also logged for rollback.
-     * @return 1 success | -1 room not found | -2 invalid status name
+     * @return 1 success | 0 status was already set (no log created) |
+     *         -1 room not found | -2 invalid status name | -4 staff name is blank
      */
     public int setRoomStatus(String roomNumber, String newStatus, String staffName) {
         Room room = findRoomByNumber(roomNumber);
         if (room == null) return -1;
-        if (getStatusIndex(newStatus) == -1) return -2;
+        if (!hasValidStaffName(staffName)) return -4;
+
+        int newStatusIndex = getStatusIndex(newStatus == null ? null : newStatus.trim());
+        if (newStatusIndex == -1) return -2;
+
+        String canonicalStatus = STATUS_SEQUENCE[newStatusIndex];
+        if (sameStatus(room.getRoomStatus(), canonicalStatus)) return 0;
 
         String previousStatus = room.getRoomStatus();
-        room.setRoomStatus(newStatus);
-        taskLogStack.push(new HousekeepingLog(roomNumber, previousStatus, newStatus, staffName));
+        room.setRoomStatus(canonicalStatus);
+        taskLogStack.push(new HousekeepingLog(roomNumber.trim(), previousStatus, canonicalStatus, staffName.trim()));
         return 1;
     }
 
     /**
      * Instantly rolls back the most recent status change by popping the task-log stack
      * and restoring the affected room's previous status.
-     * @return 1 success | 0 nothing to roll back
+     * A log can only be safely reversed while the room still has the status
+     * written by that log.  In addition, a transition whose previous status
+     * was outside the housekeeping workflow is treated as unsafe: another
+     * module (for example Front Desk checkout) may have written the same
+     * current status in the meantime, and Room does not expose a version
+     * number with which to distinguish those writes.
+     *
+     * @return 1 success | 0 nothing to roll back | -1 room no longer exists |
+     *         -2 room was changed externally / rollback is unsafe
      */
     public int rollbackLastChange() {
         if (taskLogStack.isEmpty()) return 0;
 
-        HousekeepingLog lastLog = taskLogStack.pop();
+        HousekeepingLog lastLog = taskLogStack.peek();
         Room room = findRoomByNumber(lastLog.getRoomNumber());
-        if (room != null) {
-            room.setRoomStatus(lastLog.getPreviousStatus());
+        if (room == null) return -1;
+
+        if (!sameStatus(room.getRoomStatus(), lastLog.getNewStatus())
+                || getStatusIndex(lastLog.getPreviousStatus()) == -1) {
+            return -2;
         }
+
+        taskLogStack.pop();
+        room.setRoomStatus(lastLog.getPreviousStatus());
         return 1;
     }
 
     public HousekeepingLog peekLastChange() {
         return taskLogStack.isEmpty() ? null : taskLogStack.peek();
+    }
+
+    /** Returns the latest log as display text, or null when no log exists. */
+    public String getLastChangeDisplayText() {
+        HousekeepingLog last = peekLastChange();
+        return last == null ? null : last.toString();
     }
 
     public int getLoggedTaskCount() {
@@ -179,6 +240,18 @@ public class HousekeepingController {
         return filtered;
     }
 
+    /** Returns filtered/sorted task logs as display text for the boundary. */
+    public String[] getFilteredTaskLogDisplayLines(String roomNumberFilter,
+                                                    String statusFilter,
+                                                    boolean newestFirst) {
+        ListInterface<HousekeepingLog> logs = getFilteredTaskLog(roomNumberFilter, statusFilter, newestFirst);
+        String[] lines = new String[logs.getNumberOfEntries()];
+        for (int i = 0; i < logs.getNumberOfEntries(); i++) {
+            lines[i] = logs.get(i).toString();
+        }
+        return lines;
+    }
+
     // Report 3 (bonus): Rooms not yet Ready for Check-In, sorted by how far behind they are.
     public ListInterface<Room> getRoomsNeedingAttention() {
         ListInterface<Room> result = new MyArrayList<>();
@@ -198,5 +271,16 @@ public class HousekeepingController {
         });
 
         return result;
+    }
+
+    /** Returns attention-report rows as display text for the boundary. */
+    public String[] getRoomsNeedingAttentionDisplayLines() {
+        ListInterface<Room> rooms = getRoomsNeedingAttention();
+        String[] lines = new String[rooms.getNumberOfEntries()];
+        for (int i = 0; i < rooms.getNumberOfEntries(); i++) {
+            Room room = rooms.get(i);
+            lines[i] = room.getRoomNumber() + " - " + room.getRoomStatus();
+        }
+        return lines;
     }
 }

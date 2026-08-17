@@ -16,7 +16,7 @@
 | 1 | Walk-In & Standard Booking | Zhi Xuan | 客人排队登记、分配房间、创建预订、取消预订 |
 | 2 | Housekeeping & Task Log | Kai Wei | 管理房间清洁状态、推进/回滚清洁流程、任务日志 |
 | 3 | Front-Desk Service System | Wei Sheng | 搜索客人、办理入住/退房、换房、生成账单、管理报告 |
-| 4 | Loyalty & Rewards Service | Hock Siang | (Placeholder，尚未完成) |
+| 4 | Loyalty & Rewards Service | Hock Siang | 会员积分/EXP、等级、每日签到、奖励兑换、库存、通知与管理报告 |
 
 ## 3. Program 从哪里开始执行？
 
@@ -72,9 +72,12 @@ App (主入口)
  │         ├── BinarySearchTree<Room> (ADT: Room BST，内部同步)
  │         └── MyArrayList<Room> (ADT: 共享房间列表)
  │
- └── LoyaltyUI (boundary, Placeholder)
-      └── LoyaltyController (control, Placeholder)
-           └── BinarySearchTree<Guest> (ADT: 共享 Guest BST)
+ └── LoyaltyUI (boundary)
+      └── LoyaltyController (control，共享单一实例)
+           ├── BinarySearchTree<Guest> (ADT: 共享 Guest BST)
+           ├── BinarySearchTree<RewardItem> (ADT: 奖励目录)
+           ├── MyArrayList<PointTransaction> (ADT: 积分批次与流水)
+           └── MyArrayList<LoyaltyTransaction> (ADT: 奖励兑换记录)
 ```
 
 ### 关键架构概念：共享内存 (Shared Memory)
@@ -143,6 +146,7 @@ App (主入口)
 | `roomRate` | double | 每晚房价 |
 | `loyaltyTier` | String | 会员等级: Platinum / Gold / Silver / Standard |
 | `loyaltyPoints` | int | 会员积分 |
+| `loyaltyExperience` | int | 终身等级经验；兑换积分时不会减少 |
 | `specialRequest` | String | 特殊要求 (如 "Extra pillows") |
 
 **主要负责：**
@@ -413,7 +417,10 @@ App (主入口)
 ### 16. [LoyaltyUI.java](file:///Users/WS/Desktop/DEGREE/DSA%20Assignment/src/boundary/LoyaltyUI.java)
 
 **用途：**
-→ Loyalty 模块的占位符 (Placeholder)。目前只显示一条通知信息。
+→ Loyalty 模块的用户界面。它通过共享 `LoyaltyController` 搜索会员，并提供会员资料、每日签到、奖励目录、兑换/使用奖励、历史记录、通知和两份管理报告。
+
+**分层原则：**
+→ UI 只读取输入和显示结果；Guest BST、积分、EXP、等级、库存与交易状态都由 `LoyaltyController` 处理。
 
 ---
 
@@ -464,7 +471,16 @@ App (主入口)
 ### 20. [LoyaltyController.java](file:///Users/WS/Desktop/DEGREE/DSA%20Assignment/src/control/LoyaltyController.java)
 
 **用途：**
-→ Loyalty 模块的占位符。只保存了 `masterGuestRegistry` 的引用。
+→ 处理 Loyalty 模块的所有业务逻辑，并与 Front Desk 共用同一个实例。
+
+**里面储存：**
+- `masterGuestRegistry` (BST\<Guest\>) — 共享 Guest Registry
+- `rewardCatalog` (BST\<RewardItem\>) — 按 reward ID 管理奖励目录
+- `pointHistory` (MyArrayList\<PointTransaction\>) — earning batch、扣除和过期流水
+- `redemptionHistory` (MyArrayList\<LoyaltyTransaction\>) — 奖励兑换/使用/过期记录
+
+**主要规则：**
+→ Checkout 成功后统一增加 points 和 EXP；tier 只按 EXP 的 200 / 500 / 1000 门槛计算。兑换只扣可用 points，不扣 EXP，所以不会令会员降级。兑换积分时按最早到期批次优先消耗，并以 source reference 防止同一次 checkout 重复发分。
 
 ---
 
@@ -1775,24 +1791,23 @@ private static final String[] STATUS_SEQUENCE = {
 
 ---
 
-## FrontDeskUI.java 中的 Loyalty Points 计算
+## Front Desk 与 Loyalty 的积分整合
 
 ```java
 int earnedPoints = (int) (subtotal / 10.0);
 ```
 
 **为什么存在？**
-→ 每消费 RM10 赚 1 积分。使用 subtotal（折扣前金额）计算，这是行业标准做法。
+→ 每消费 RM10 赚 1 point 和 1 EXP。Front Desk 仍使用 subtotal（折扣前金额）计算 earned points，但只有 checkout 成功后才委派共享的 `LoyaltyController` 发放。
 
 ```java
-if (updatedPoints >= 1000) guest.setLoyaltyTier("Platinum");
-else if (updatedPoints >= 500) guest.setLoyaltyTier("Gold");
-else if (updatedPoints >= 200) guest.setLoyaltyTier("Silver");
-else guest.setLoyaltyTier("Standard");
+loyaltyController.awardCheckoutPoints(
+    confirmationNumber, sourceReference, earnedPoints
+);
 ```
 
 **为什么存在？**
-→ 自动升级/降级忠诚度等级。积分到达门槛自动升级。
+→ 所有积分变动集中在同一个 Controller：points 用于兑换，EXP 用于等级。Silver / Gold / Platinum 分别需要 200 / 500 / 1000 EXP；兑换只减少 points，不减少 EXP，因此不会因为兑换而降级。
 
 ---
 
@@ -1927,10 +1942,12 @@ FrontDeskUI.displayMenu()
  ├── handleRoomTransfer()
  │    └── FrontDeskController.processRoomTransfer()
  │
- ├── handleBillingReceipt()
+ ├── handleCheckOut()
  │    ├── FrontDeskController.searchGuestByConfirmationNumber()
  │    ├── FrontDeskController.getDiscountPercentage()
- │    └── FrontDeskController.processCheckOut()
+ │    └── FrontDeskController.completeCheckOutAndReward()
+ │         ├── processCheckOut() → Guest="CheckedOut" + Room="Dirty"
+ │         └── LoyaltyController.awardCheckoutPoints()
  │
  ├── displayReportsSubmenu()
  │    ├── Report 1: getRoomStatusSummary() + calculateOccupancyRate() + calculateEstimatedDailyRevenue()
@@ -1947,6 +1964,29 @@ FrontDeskUI.displayMenu()
 
 ---
 
+## 模块 4: Loyalty 流程
+
+```
+App.main()
+ ↓ 创建一个共享 LoyaltyController
+ ├── FrontDesk checkout 成功
+ │    └── awardCheckoutPoints() → points + EXP → 按 EXP 更新 tier → 记录 PointTransaction
+ │
+ └── LoyaltyUI.displayMenu()
+      ├── confirmationNumber → Guest BST search
+      ├── Daily Check-In → 每位会员每天一次
+      ├── Reward Catalog → RewardItem BST in-order traversal
+      ├── Redeem Reward → 检查库存/余额 → 最早到期积分批次优先扣除
+      ├── Reward Inventory → ACTIVE / USED / EXPIRED
+      ├── Point History / Notifications
+      ├── Report 1: Member Point Activity（search + 多条件 filter + sort）
+      └── Report 2: Reward Stock & Performance（search + 多条件 filter + sort）
+```
+
+Loyalty 的 earning batches 和兑换记录分别保存在自定义 `MyArrayList` 中。兑换前会先处理过期积分，再把有效 earning batches 按 `expiresAt → occurredAt → transactionId` 排序，以 FIFO/最早到期优先方式消费，避免扣错批次。
+
+---
+
 # 第六部分：DSA 分析
 
 ---
@@ -1955,10 +1995,10 @@ FrontDeskUI.displayMenu()
 
 | Data Structure | 具体实现 | 用在哪里 | 为什么使用 |
 |---------------|---------|---------|-----------|
-| **Binary Search Tree (BST)** | `BinarySearchTree<T>` | Master Guest Registry; Room Tree (FrontDesk) | 支持 O(log n) 搜索/插入/删除；支持范围搜索；支持有序遍历 |
+| **Binary Search Tree (BST)** | `BinarySearchTree<T>` | Master Guest Registry; Room Tree (FrontDesk); Reward Catalog (Loyalty) | 支持 O(log n) 搜索/插入/删除；支持范围搜索；支持有序遍历 |
 | **Circular Array Queue** | `ArrayQueue<T>` | BookingController.waitingQueue | 客人先来先服务 (FIFO)；O(1) enqueue/dequeue |
 | **Array Stack** | `ArrayStack<T>` | HousekeepingController.taskLogStack | 最后的操作最先撤销 (LIFO)；O(1) push/pop |
-| **Dynamic Array List** | `MyArrayList<T>` | 共享房间列表；预订记录；各种筛选结果 | 通用的有序集合；支持按索引访问；支持排序 |
+| **Dynamic Array List** | `MyArrayList<T>` | 共享房间列表；预订记录；Loyalty point/redemption histories；各种筛选结果 | 通用的有序集合；支持按索引访问；支持排序 |
 
 ## 使用了哪些 Algorithms？
 
@@ -2023,8 +2063,9 @@ FrontDeskUI.displayMenu()
 | 升级后按原价收费 | `processCheckIn()` 使用传入的 baseRoomPrice |
 | 退房后房间变为 "Dirty" | `processCheckOut()` 设置 roomStatus |
 | 换房后旧房间变 "Dirty"，新房间变 "Occupied" | `processRoomTransfer()` |
-| RM10 = 1 积分 | `handleBillingReceipt()` → `subtotal / 10` |
-| ≥1000 分 = Platinum, ≥500 = Gold, ≥200 = Silver | `handleBillingReceipt()` 自动升级 |
+| RM10 = 1 point + 1 EXP | Checkout 成功后 `awardCheckoutPoints()` |
+| ≥1000 EXP = Platinum, ≥500 EXP = Gold, ≥200 EXP = Silver | `LoyaltyController.calculateTier()` |
+| 兑换奖励只扣 points，不扣 EXP，因此不会降级 | `LoyaltyController.redeemReward()` |
 | Platinum 折扣 20%, Gold 10%, Silver 5% | `getDiscountPercentage()` |
 
 ## Housekeeping 模块的规则
@@ -2046,6 +2087,7 @@ FrontDeskUI.displayMenu()
 | Front Desk 退房后 → Housekeeping 看到 "Dirty" | 同上 |
 | Housekeeping 清洁完 → Booking/FrontDesk 看到 "Ready for Check-In" | 同上 |
 | Booking 注册的新客人 → Front Desk 可以搜索到 | 新客人同步到 masterGuestRegistry BST |
+| Front Desk checkout → Loyalty points/EXP/history 同步更新 | App 把同一个 LoyaltyController 实例注入 FrontDeskUI 与 LoyaltyUI |
 
 ---
 
@@ -2072,8 +2114,8 @@ FrontDeskUI.displayMenu()
 | `FrontDeskController` | Front Desk 业务逻辑 |
 | `HousekeepingUI` | Housekeeping 界面 |
 | `HousekeepingController` | Housekeeping 业务逻辑 |
-| `LoyaltyUI` | Loyalty 界面 (Placeholder) |
-| `LoyaltyController` | Loyalty 逻辑 (Placeholder) |
+| `LoyaltyUI` | Loyalty 会员操作、奖励兑换、通知与报告界面 |
+| `LoyaltyController` | Loyalty points/EXP/tier、积分批次、奖励库存与报告逻辑 |
 
 ## Data Structure → 使用地点
 
@@ -2082,12 +2124,15 @@ FrontDeskUI.displayMenu()
 | BST | `masterGuestRegistry` | App → 共享 | Guest (by confirmationNumber) |
 | BST | `guestTree` | FrontDeskController | 同上的引用 |
 | BST | `roomTree` | FrontDeskController | Room (by roomNumber) |
+| BST | `rewardCatalog` | LoyaltyController | RewardItem (by itemId) |
 | Queue | `waitingQueue` | BookingController | 等待分配房间的 Guest |
 | Stack | `taskLogStack` | HousekeepingController | 清洁状态变更日志 |
 | ArrayList | `sharedRoomList` | App → 共享 | 所有 Room |
 | ArrayList | `bookingList` | BookingController | 所有 Booking 记录 |
 | ArrayList | `registeredGuests` | BookingController | 通过 Booking 登记的 Guest |
 | ArrayList | `activeCheckedInConfirmations` | FrontDeskController | 已入住的确认号 |
+| ArrayList | `pointHistory` | LoyaltyController | PointTransaction earning batches 与扣除/过期流水 |
+| ArrayList | `redemptionHistory` | LoyaltyController | LoyaltyTransaction 兑换、使用与过期记录 |
 
 ## Algorithm → 使用地点
 
@@ -2134,11 +2179,17 @@ FrontDeskUI.displayMenu()
  │   ├── 注册/删除 → BST add/remove
  │   ├── 入住 → 验证 + Room="Occupied" + Guest="CheckedIn"
  │   ├── 换房 → 旧房="Dirty" + 新房="Occupied"
- │   ├── 账单退房 → 计算折扣 + 积分 + Room="Dirty" + Guest="CheckedOut"
+ │   ├── 账单退房 → 计算折扣 + Room="Dirty" + Guest="CheckedOut" → 委派 Loyalty 发 points/EXP
  │   ├── 报告 → Filter + Sort
  │   └── BST 诊断 → 可视化/遍历比较/重新平衡
  │
- ├─ 用户选 4 → Loyalty 模块 (Placeholder)
+ ├─ 用户选 4 → Loyalty 模块
+ │   ├── 查看会员 points / EXP / tier 与通知
+ │   ├── Daily Check-In → 每日一次 points + EXP
+ │   ├── Reward Catalog → BST 有序显示
+ │   ├── 兑换奖励 → 最早到期积分优先扣除 + 更新库存/交易
+ │   ├── 使用奖励 → ACTIVE 转为 USED，过期则为 EXPIRED
+ │   └── 两份报告 → Search + Multiple Filters + Selection Sort
  │
  └─ 用户选 0 → 退出程序
 ```
