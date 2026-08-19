@@ -1,267 +1,250 @@
 package boundary;
 
+import adt.BSTInterface;
+import adt.ListInterface;
 import control.LoyaltyController;
-import java.time.LocalDate;
-import java.time.format.DateTimeParseException;
+import entity.Guest;
+import entity.RewardItem;
 import java.util.Scanner;
 
 /**
  * Author: Hock Siang
- * Console boundary for member loyalty, reward redemption and management reports.
- * All searching, ADT traversal and business mutations are delegated to Control.
+ * Loyalty & Rewards module user interface.
  */
 public class LoyaltyUI {
-    private final LoyaltyController controller;
-    private Scanner scanner;
+    private BSTInterface<Guest> masterGuestTree;
+    private LoyaltyController loyaltyController;
 
-    public LoyaltyUI() {
-        this(new LoyaltyController());
+    public LoyaltyUI(BSTInterface<Guest> masterGuestTree) {
+        this.masterGuestTree = masterGuestTree;
+        this.loyaltyController = new LoyaltyController();
     }
-
-    public LoyaltyUI(LoyaltyController controller) {
-        if (controller == null) throw new IllegalArgumentException("LoyaltyController is required.");
-        this.controller = controller;
+    
+    public LoyaltyUI(BSTInterface<Guest> masterGuestTree, LoyaltyController loyaltyController) {
+        this.masterGuestTree = masterGuestTree;
+        this.loyaltyController = loyaltyController;
     }
 
     public void displayMenu() {
-        displayMenu(new Scanner(System.in));
+        displayMenu(null);
     }
 
     public void displayMenu(Scanner scanner) {
-        this.scanner = scanner != null ? scanner : new Scanner(System.in);
-        int choice;
+        Scanner scan = (scanner != null) ? scanner : new Scanner(System.in);
+        String confirmNo;
+
         do {
-            System.out.println("\n============================================================");
-            System.out.println("             LOYALTY & REWARDS SERVICE");
-            System.out.println("============================================================");
-            System.out.println("1. Member Loyalty Service");
-            System.out.println("2. Report: Member Point Activity");
-            System.out.println("3. Report: Reward Stock & Performance");
-            System.out.println("4. Management: Restock Reward Catalog");
-            System.out.println("0. Back to Main Menu");
-            System.out.println("------------------------------------------------------------");
-            choice = readInt("Select an option (0-4): ", 0, 4);
+            System.out.println("\n-----------------------------------------------");
+            System.out.println("          LOYALTY & REWARDS MANAGEMENT           ");
+            System.out.println("-----------------------------------------------");
+            System.out.print("Enter Confirmation Number (0 to exit): ");
+            
+            confirmNo = scan.nextLine().trim();
 
-            switch (choice) {
-                case 1:
-                    openMemberService();
-                    break;
-                case 2:
-                    displayPointActivityReport();
-                    break;
-                case 3:
-                    displayRewardPerformanceReport();
-                    break;
-                case 4:
-                    restockRewards();
-                    break;
-                case 0:
-                    System.out.println("Returning to main menu...");
-                    break;
-                default:
-                    break;
+            if (confirmNo.equals("0")) {
+                System.out.println("Returning to main menu...");
+                break;
             }
-        } while (choice != 0);
+
+            if (confirmNo.isEmpty()) {
+                System.out.println("Confirmation number cannot be empty!");
+                continue;
+            }
+
+            Guest targetDummy = new Guest("", confirmNo, "", 0);
+            Guest guest = masterGuestTree.search(targetDummy);
+
+            if (guest != null) {
+                guestProfile(guest, scan);
+            } else {
+                System.out.println("Error: No guest found with confirmation number '" + confirmNo + "'.");
+            }
+        } while (true);
     }
+    
+    public void guestProfile(Guest guest, Scanner scan) {
+        String choice;
 
-    private void openMemberService() {
-        System.out.print("Enter member confirmation number: ");
-        String confirmation = scanner.nextLine().trim();
-        if (!controller.memberExists(confirmation)) {
-            System.out.println("Error: No member found for confirmation number '" + confirmation + "'.");
-            return;
-        }
-
-        int choice;
         do {
-            System.out.println("\n============================================================");
-            System.out.println("                 MEMBER LOYALTY SERVICE");
-            System.out.println("============================================================");
-            System.out.println(controller.getMemberProfileText(confirmation));
-            System.out.println("------------------------------------------------------------");
-            System.out.println(controller.getNotificationsText(confirmation));
-            System.out.println("------------------------------------------------------------");
-            System.out.println("1. Refresh Member Profile");
-            System.out.println("2. Daily Check-In (+10 points and EXP)");
-            System.out.println("3. View Reward Catalog");
-            System.out.println("4. Redeem Reward");
-            System.out.println("5. View Redeemed Reward Inventory");
-            System.out.println("6. Use Redeemed Reward");
-            System.out.println("7. View Point Transaction History");
-            System.out.println("0. Back to Loyalty Menu");
-            choice = readInt("Select an option (0-7): ", 0, 7);
+            loyaltyController.refreshPoints(guest);
+            String tierInfo = loyaltyController.getNextTierInfo(guest);
+            
+            System.out.println("\n========================================================================");
+            System.out.println("                MEMBER PROFILE: " + guest.getGuestName() + " - " + guest.getConfirmationNumber());
+            System.out.println("========================================================================");
+            System.out.println(loyaltyController.checkNotifications(guest));
+            System.out.println("Current Tier    : " + guest.getLoyaltyTier());
+            System.out.println("Loyalty Points  : " + guest.getLoyaltyPoints());
+            System.out.println("Loyalty EXP     : " + tierInfo);
+            System.out.println("------------------------------------------------------------------------");
+            System.out.println("1. Daily Check-In (+700 pts)");
+            System.out.println("2. Reward Catalog (Point Exchange)");
+            System.out.println("3. Item Storage & Inventory");
+            System.out.println("4. Point & Redemption History");
+            System.out.println("5. Restock Item Stock");
+            System.out.println("6. Member Point Activity & Expiry Audit Report");
+            System.out.println("7. Reward Item Stock & Performance Report");
+            System.out.println("0. Back to Confirmation Menu");
+            System.out.println("========================================================================");
 
-            switch (choice) {
-                case 1:
-                    System.out.println("\n" + controller.getMemberProfileText(confirmation));
-                    break;
-                case 2:
-                    printAward(controller.claimDailyReward(confirmation));
-                    break;
-                case 3:
-                    printCatalog();
-                    break;
-                case 4:
-                    redeemReward(confirmation);
-                    break;
-                case 5:
-                    viewInventory(confirmation);
-                    break;
-                case 6:
-                    useReward(confirmation);
-                    break;
-                case 7:
-                    System.out.println("\n--- POINT TRANSACTION HISTORY ---");
-                    System.out.println(controller.getPointHistoryText(confirmation));
-                    break;
-                case 0:
-                    System.out.println("Returning to Loyalty menu...");
-                    break;
-                default:
-                    break;
+            while (true) {
+                System.out.print("Select an option (0-7) > ");
+                choice = scan.nextLine().trim();
+
+                if (loyaltyController.isValidMenuChoice(choice, 0, 7)) break;
+                System.out.println("Invalid selection. Please enter a number between 0 and 7.");
             }
-        } while (choice != 0);
-    }
+            
+            switch (choice) {
+                case "1" -> System.out.println("\n" + loyaltyController.performDailyCheckIn(guest));
+                case "2" -> rewardCatalog(scan, guest);
+                case "3" -> viewInventory(scan, guest);
+                case "4" -> System.out.println("\n--- TRANSACTION HISTORY ---\n" + loyaltyController.getFormattedTransactionHistory(guest));
+                case "5" -> System.out.println(loyaltyController.resetAllRewardStocks());
+                case "6" -> displayPointReport(scan);
+                case "7" -> displayRewardReport(scan);
+                case "0" -> System.out.println("Exiting guest profile...");
+            }
 
-    private void printCatalog() {
-        System.out.println("\n--- REWARD CATALOG ---");
-        System.out.println(controller.getRewardCatalogText());
+        } while (!choice.equals("0"));
     }
+    
+    public void rewardCatalog(Scanner scan, Guest guest) {
+        while (true) {
+            System.out.println("\n========================================================================");
+            System.out.println("                        REWARD CATALOG REDEMPTION                       ");
+            System.out.println("========================================================================");
+            System.out.println(" Available Points: " + guest.getLoyaltyPoints() + " pts");
+            System.out.println("----------------------------------------------------------------------------------");
+            System.out.printf(" %-4s | %-30s | %-13s | %-11s | %-14s\n", "No.", "Reward Description", "Cost (Pts)", "Stock", "Validity");
+            System.out.println("----------------------------------------------------------------------------------");
 
-    private void redeemReward(String confirmation) {
-        printCatalog();
-        System.out.print("Enter Reward Item ID to redeem (0 to cancel): ");
-        String itemId = scanner.nextLine().trim();
-        if ("0".equals(itemId)) return;
-        LoyaltyController.RedemptionResult result = controller.redeemReward(confirmation, itemId);
-        System.out.println((result.isSuccess() ? "SUCCESS: " : "ERROR: ") + result.getMessage());
-        if (result.isSuccess()) {
-            System.out.printf("Transaction: %s | Points spent: %d | New balance: %d%n",
-                    result.getTransactionId(), result.getPointsSpent(), result.getNewBalance());
+            ListInterface<RewardItem> items = loyaltyController.getRewardCatalog();
+
+            for (int i = 0; i < items.getNumberOfEntries(); i++) {
+                RewardItem item = items.get(i);
+                System.out.printf(" %-2d.  | %s\n", (i + 1), item.toString());
+            }
+
+            System.out.println("----------------------------------------------------------------------------------");
+            System.out.println(" 0. Back to Profile Menu");
+            System.out.println("==================================================================================");
+            System.out.print("Select item number to redeem > ");
+            String input = scan.nextLine().trim();
+
+            if (input.equals("0")) {
+                break;
+            }
+
+            if (loyaltyController.isValidMenuChoice(input, 1, items.getNumberOfEntries())) {
+                int choice = Integer.parseInt(input);
+                String resultMsg = loyaltyController.redeemRewardItem(guest, items.get(choice - 1));
+                System.out.println("\n------------------------------------------------------------------------");
+                System.out.println(" " + resultMsg);
+                System.out.println("------------------------------------------------------------------------");
+            } else {
+                System.out.println("\n[ERROR] Invalid selection. Please enter a valid item number.");
+            }
+        }
+    }
+    
+    public void viewInventory(Scanner scan, Guest guest) {
+        while (true) {
+            System.out.println("\n========================================================================");
+            System.out.println("                    REDEEMED ITEM STORAGE & INVENTORY                   ");
+            System.out.println("========================================================================");            
+            System.out.println(loyaltyController.getFormattedInventory(guest));
+            System.out.println("------------------------------------------------------------------------");
+            System.out.print("Select option (0 to go back) > ");
+            
+            String input = scan.nextLine().trim();
+            if (input.equals("0")) {
+                break;
+            }
+
+            try {
+                int choice = Integer.parseInt(input);
+                String result = loyaltyController.useRedeemedItem(guest, choice);
+                System.out.println("------------------------------------------------------------------------");
+                System.out.println(" " + result);
+                System.out.println("------------------------------------------------------------------------");
+            } catch (NumberFormatException e) {
+                System.out.println("\n[ERROR] Invalid input. Please enter a valid number.");
+            }
+        }
+    }
+    
+    private void displayPointReport(Scanner scan) {
+        System.out.print("Status (ACTIVE/EXPIRED/DEDUCTION/ALL): ");
+        String status = scan.nextLine().trim();
+        System.out.print("Sort (1.Asc, 2.Desc): ");
+        boolean ascending = readIntInput(scan) != 2;
+
+        ListInterface<String> report = loyaltyController.getFilteredPointReport(status, ascending);
+
+        System.out.println("\n--- POINT ACTIVITY & EXPIRY REPORT ---");
+        System.out.printf("%-10s | %-8s | %-40s | %-19s | %-19s | %-10s\n", "Confirm No", "Points", "Description", "Earned", "Expiry", "Status");
+        System.out.println("--------------------------------------------------------------------------------------------------");
+
+        if (report.isEmpty()) System.out.println("No matching records.");
+        else for (int i = 0; i < report.getNumberOfEntries(); i++) {
+            String[] p = report.get(i).split("\\|");
+            System.out.printf("%-10s | %-8s | %-40s | %-19s | %-19s | %-10s\n",
+                    p[4].replace("Conf: ", ""), (Integer.parseInt(p[0]) >= 0 ? "+" : "") + p[0], p[3], p[1], p[2], p[5]);
         }
     }
 
-    private void viewInventory(String confirmation) {
-        System.out.print("Status filter (ACTIVE / USED / EXPIRED / ALL): ");
-        String status = defaultAll(scanner.nextLine());
-        System.out.println("\n--- REDEEMED REWARD INVENTORY ---");
-        System.out.println(controller.getRewardInventoryText(confirmation, status));
-    }
+    private void displayRewardReport(Scanner scan) {
+        System.out.print("\nMaximum Stock Filter: ");
+        int maxStock = readIntInput(scan);
 
-    private void useReward(String confirmation) {
-        System.out.println("\n--- ACTIVE REDEEMED REWARDS ---");
-        System.out.println(controller.getRewardInventoryText(confirmation, "ACTIVE"));
-        System.out.print("Enter redemption Transaction ID to use (0 to cancel): ");
-        String transactionId = scanner.nextLine().trim();
-        if ("0".equals(transactionId)) return;
-        LoyaltyController.UseRewardResult result =
-                controller.useRedeemedReward(confirmation, transactionId);
-        System.out.println((result.isSuccess() ? "SUCCESS: " : "ERROR: ") + result.getMessage());
-    }
+        System.out.print("Sort by Points Cost? (1 Ascending, 2 Descending): ");
+        boolean ascending = readIntInput(scan) != 2;
 
-    private void displayPointActivityReport() {
-        System.out.println("\n--- MEMBER POINT ACTIVITY REPORT CRITERIA ---");
-        System.out.print("Search member/confirmation/name/description (blank = ALL): ");
-        String search = scanner.nextLine().trim();
-        System.out.print("Transaction type (CHECKOUT_EARN / DAILY_CHECK_IN / REDEMPTION / EXPIRY / ALL): ");
-        String type = defaultAll(scanner.nextLine());
-        System.out.print("Status (ACTIVE / PARTIALLY_USED / CONSUMED / EXPIRED / DEDUCTION / ALL): ");
-        String status = defaultAll(scanner.nextLine());
-        LocalDate from = readOptionalDate("From date yyyy-MM-dd (blank = ALL): ");
-        LocalDate to = readOptionalDate("To date yyyy-MM-dd (blank = ALL): ");
-        while (from != null && to != null && to.isBefore(from)) {
-            System.out.println("To date cannot be before From date.");
-            to = readOptionalDate("To date yyyy-MM-dd (blank = ALL): ");
+        ListInterface<RewardItem> report = loyaltyController.getFilteredRewardReport(maxStock, ascending);
+
+        System.out.println("\n==================================================================================");
+        System.out.println("                        REWARD STOCK & PERFORMANCE REPORT                                 ");
+        System.out.println("==================================================================================");
+        System.out.printf(" %-24s | %-6s | %-5s | %-8s | %-8s | %-8s\n",
+                "Reward Item", "Cost", "Stock", "Redeemed", "Active", "Expired");
+        System.out.println("----------------------------------------------------------------------------------");
+
+        int grandTotalRedemptions = 0;
+        int grandTotalActive = 0;
+        int grandTotalExpired = 0;
+
+        for (int i = 0; i < report.getNumberOfEntries(); i++) {
+            RewardItem r = report.get(i);
+            int redeemedCount = loyaltyController.getTotalItemRedemptionCount(r.getItemName());
+            int activeCount = loyaltyController.getActiveItemRedemptionCount(null, r.getItemName());
+            int expiredCount = loyaltyController.getExpiredItemRedemptionCount(r.getItemName());
+
+            grandTotalRedemptions += redeemedCount;
+            grandTotalActive += activeCount;
+            grandTotalExpired += expiredCount;
+
+            System.out.printf(" %-24s | %-6d | %-5d | %-8d | %-8d | %-8d\n",
+                    r.getItemName(), r.getPointsCost(), r.getStockQuantity(), redeemedCount, activeCount, expiredCount);
         }
-        int minPoints = readInt("Minimum absolute points (0 or more): ", 0, Integer.MAX_VALUE);
-        System.out.print("Sort field (DATE / POINTS / CONFIRMATION / TYPE / STATUS): ");
-        String sortField = defaultValue(scanner.nextLine(), "DATE");
-        boolean ascending = readSortDirection();
 
-        System.out.println("\n" + controller.getPointActivityReportText(search, type, status,
-                from, to, minPoints, sortField, ascending));
-    }
-
-    private void displayRewardPerformanceReport() {
-        System.out.println("\n--- REWARD PERFORMANCE REPORT CRITERIA ---");
-        System.out.print("Search Reward ID/name (blank = ALL): ");
-        String search = scanner.nextLine().trim();
-        System.out.print("Stock status (IN_STOCK / LOW_STOCK / OUT_OF_STOCK / ALL): ");
-        String stockStatus = defaultAll(scanner.nextLine());
-        int minCost = readInt("Minimum points cost (0 or more): ", 0, Integer.MAX_VALUE);
-        int maxCost = readInt("Maximum points cost (-1 = ALL): ", -1, Integer.MAX_VALUE);
-        while (maxCost >= 0 && maxCost < minCost) {
-            System.out.println("Maximum cost must be -1 or at least the minimum cost.");
-            maxCost = readInt("Maximum points cost (-1 = ALL): ", -1, Integer.MAX_VALUE);
-        }
-        int minRedeemed = readInt("Minimum redemption count (0 or more): ", 0, Integer.MAX_VALUE);
-        System.out.print("Sort field (COST / STOCK / REDEEMED / NAME / STATUS): ");
-        String sortField = defaultValue(scanner.nextLine(), "COST");
-        boolean ascending = readSortDirection();
-
-        System.out.println("\n" + controller.getRewardPerformanceReportText(search, stockStatus,
-                minCost, maxCost, minRedeemed, sortField, ascending));
-    }
-
-    private void restockRewards() {
-        System.out.print("Restock every reward to its default quantity? (Y/N): ");
-        if ("Y".equalsIgnoreCase(scanner.nextLine().trim())) {
-            System.out.println(controller.resetAllRewardStocks());
+        System.out.println("----------------------------------------------------------------------------------");
+        if (report.isEmpty()) {
+            System.out.println(" No items match the stock criteria.");
         } else {
-            System.out.println("Restock cancelled.");
+            System.out.printf(" SUMMARY: Showing %d item(s) | Total: %d Redeemed | Active: %d | Expired: %d\n",
+                    report.getNumberOfEntries(), grandTotalRedemptions, grandTotalActive, grandTotalExpired);
         }
+        System.out.println("==================================================================================");
     }
 
-    private void printAward(LoyaltyController.AwardResult result) {
-        System.out.println((result.isSuccess() ? "SUCCESS: " : "WARNING: ") + result.getMessage());
-        if (result.isSuccess()) {
-            System.out.printf("Points awarded: %d | New balance: %d%n",
-                    result.getPointsAwarded(), result.getNewBalance());
-            if (result.isTierUpgraded()) {
-                System.out.println("Tier upgraded: " + result.getOldTier() + " -> " + result.getNewTier());
-            }
-        }
-    }
-
-    private int readInt(String prompt, int minimum, int maximum) {
+    private int readIntInput(Scanner scan) {
         while (true) {
-            System.out.print(prompt);
             try {
-                int value = Integer.parseInt(scanner.nextLine().trim());
-                if (value >= minimum && value <= maximum) return value;
-            } catch (NumberFormatException ignored) {
-                // Fall through to the common validation message.
-            }
-            System.out.printf("Invalid input. Enter a value from %d to %d.%n", minimum, maximum);
-        }
-    }
-
-    private LocalDate readOptionalDate(String prompt) {
-        while (true) {
-            System.out.print(prompt);
-            String input = scanner.nextLine().trim();
-            if (input.isEmpty()) return null;
-            try {
-                return LocalDate.parse(input);
-            } catch (DateTimeParseException e) {
-                System.out.println("Invalid date. Use yyyy-MM-dd, for example 2026-08-17.");
+                return Integer.parseInt(scan.nextLine().trim());
+            } catch (NumberFormatException e) {
+                System.out.print("Invalid input. Please enter a valid number: ");
             }
         }
-    }
-
-    private boolean readSortDirection() {
-        return readInt("Sort direction (1 = Ascending, 2 = Descending): ", 1, 2) == 1;
-    }
-
-    private String defaultAll(String value) {
-        return defaultValue(value, "ALL");
-    }
-
-    private String defaultValue(String value, String fallback) {
-        return value == null || value.trim().isEmpty() ? fallback : value.trim();
-    }
-
-    public static void main(String[] args) {
-        new LoyaltyUI().displayMenu();
     }
 }

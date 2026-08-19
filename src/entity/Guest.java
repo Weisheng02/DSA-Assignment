@@ -180,6 +180,12 @@ public class Guest implements Comparable<Guest> {
         this.loyaltyExperience = Math.max(0, loyaltyExperience);
     }
 
+    // Compatibility aliases used by the supplied LoyaltyController.
+    public int getLoyaltyExperiences() { return getLoyaltyExperience(); }
+    public void setLoyaltyExperiences(int loyaltyExperience) {
+        setLoyaltyExperience(loyaltyExperience);
+    }
+
     // --- Preferences ---
     public String getSpecialRequest() { return specialRequest; }
     public void setSpecialRequest(String specialRequest) { this.specialRequest = specialRequest; }
