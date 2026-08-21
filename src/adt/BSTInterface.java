@@ -1,5 +1,7 @@
 package adt;
 
+import java.util.function.Function;
+
 /**
  * Author: Weisheng
  * Non-Linear Data Structure Interface: Binary Search Tree (BST)
@@ -10,8 +12,10 @@ public interface BSTInterface<T extends Comparable<T>> {
 
     /**
      * Adds a new entry to this binary search tree.
+     *
      * @param newEntry An object to be added.
-     * @return true if the addition is successful; false if newEntry is null.
+     * @return true if the addition is successful; false if newEntry is null or
+     *         an equal key already exists.
      */
     boolean add(T newEntry);
 
@@ -26,6 +30,7 @@ public interface BSTInterface<T extends Comparable<T>> {
 
     /**
      * Searches for a specific entry in the tree.
+     *
      * @param entry An object to search for.
      * @return The matched entry if found; null otherwise.
      */
@@ -33,6 +38,7 @@ public interface BSTInterface<T extends Comparable<T>> {
 
     /**
      * Checks if an entry exists in this BST.
+     *
      * @param entry An object to check.
      * @return true if present; false otherwise.
      */
@@ -50,36 +56,43 @@ public interface BSTInterface<T extends Comparable<T>> {
 
     /**
      * Finds the smallest element in this BST.
+     *
      * @return The minimum entry, or null if tree is empty.
      */
     T getMin();
 
     /**
      * Finds the largest element in this BST.
+     *
      * @return The maximum entry, or null if tree is empty.
      */
     T getMax();
 
     /**
      * Calculates the height of this tree.
+     *
      * @return The height (0 if empty).
      */
     int getHeight();
 
     /**
-     * Returns all entries in sorted order via in-order traversal (Left -> Root -> Right).
+     * Returns all entries in sorted order via in-order traversal (Left -> Root ->
+     * Right).
+     *
      * @return A ListInterface containing all entries in ascending order.
      */
     ListInterface<T> inOrderTraversal();
 
     /**
      * Returns all entries via pre-order traversal (Root -> Left -> Right).
+     *
      * @return A ListInterface containing entries in pre-order sequence.
      */
     ListInterface<T> preOrderTraversal();
 
     /**
      * Returns all entries via post-order traversal (Left -> Right -> Root).
+     *
      * @return A ListInterface containing entries in post-order sequence.
      */
     ListInterface<T> postOrderTraversal();
@@ -92,12 +105,15 @@ public interface BSTInterface<T extends Comparable<T>> {
 
     /**
      * Counts the total number of leaf nodes in the tree (nodes with 0 children).
+     *
      * @return Total leaf node count.
      */
     int getLeafCount();
 
     /**
-     * Checks if the BST is height-balanced (height difference between left and right subtrees <= 1 at every node).
+     * Checks if the BST is height-balanced (height difference between left and
+     * right subtrees <= 1 at every node).
+     *
      * @return true if balanced; false otherwise.
      */
     boolean isBalanced();
@@ -108,13 +124,30 @@ public interface BSTInterface<T extends Comparable<T>> {
     void printTree();
 
     /**
+     * Returns the same ASCII tree representation without writing to the console.
+     */
+    String getTreeDisplayText();
+
+    /** Returns the ASCII tree using a caller-supplied compact node label. */
+    String getTreeDisplayText(Function<T, String> labelFormatter);
+
+    /**
+     * Returns a top-down tree diagram with the root centred above its left and
+     * right subtrees. Compact labels should be used so the diagram fits in a
+     * normal console window.
+     */
+    String getTopDownTreeDisplayText(Function<T, String> labelFormatter);
+
+    /**
      * Gets the total number of entries stored in this tree.
+     *
      * @return The total entry count.
      */
     int getNumberOfEntries();
 
     /**
      * Checks whether this tree is empty.
+     *
      * @return true if empty; false otherwise.
      */
     boolean isEmpty();

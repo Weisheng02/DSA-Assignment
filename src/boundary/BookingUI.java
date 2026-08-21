@@ -1,35 +1,31 @@
 package boundary;
 
+import adt.ListInterface;
 import control.BookingController;
-
+import entity.Booking;
+import entity.Guest;
+import entity.Room;
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
 import java.util.Scanner;
 
 /**
  * Author: Zhi Xuan
- * Boundary Class for Walk-In Registrations & Booking Module
+ * Boundary class for walk-in registrations and standard booking.
  */
 public class BookingUI {
-    private BookingController controller;
+    private final BookingController controller;
     private Scanner scanner;
 
-    public BookingUI() {
-        this(new BookingController());
-    }
-
     public BookingUI(BookingController controller) {
-        this.controller = (controller != null) ? controller : new BookingController();
-    }
-
-    public void displayMenu() {
-        displayMenu(new Scanner(System.in));
+        if (controller == null)
+            throw new IllegalArgumentException("BookingController is required.");
+        this.controller = controller;
     }
 
     public void displayMenu(Scanner scanner) {
         this.scanner = (scanner != null) ? scanner : new Scanner(System.in);
-        int choice = -1;
-
+        int choice;
         do {
             System.out.println("\n--------------------------------------------------");
             System.out.println("   WALK-IN REGISTRATIONS & STANDARD BOOKING       ");
@@ -48,22 +44,20 @@ public class BookingUI {
             System.out.println("0. Back to Main Menu");
             System.out.println("--------------------------------------------------");
             System.out.print("Enter your choice (0-11): ");
-
-            choice = readIntInput();
+            choice = readMenuChoice(0, 11);
             System.out.println();
-
             switch (choice) {
                 case 1:
                     handleRegisterWalkIn();
                     break;
                 case 2:
-                    handleViewWaitingQueue();
+                    displayWaitingQueue(controller.getWaitingQueueList());
                     break;
                 case 3:
                     handleProcessNextGuest();
                     break;
                 case 4:
-                    handleViewAllBookings();
+                    displayAllBookings(controller.getAllBookings());
                     break;
                 case 5:
                     handleSearchBooking();
@@ -89,577 +83,600 @@ public class BookingUI {
                 case 0:
                     System.out.println("Returning to main menu...");
                     break;
-                default:
-                    System.out.println("Invalid selection. Please enter a number between 0 and 11.");
             }
+            if (choice != 0)
+                pauseForEnter();
         } while (choice != 0);
     }
 
     private void handleRegisterWalkIn() {
         System.out.println("\n--- Register Walk-In Guest / Reservation ---");
-        System.out.print("Enter Guest IC / Passport Number (e.g. 980101-14-5566): ");
-        String ic = scanner.nextLine().trim();
-        if (ic.isEmpty()) {
-            System.out.println("Error: IC / Passport Number cannot be empty.");
+        String ic = readRequiredTextOrBack("Enter Guest IC / Passport Number (e.g. 980101-14-5566): ");
+        if (ic == null)
             return;
-        }
-
-        BookingController.GuestView existingGuest = controller.findGuestByICView(ic);
         String name;
-        String tier;
-        int points = 0;
-
-        if (existingGuest != null) {
-            name = existingGuest.getGuestName();
-            tier = existingGuest.getLoyaltyTier();
-            points = existingGuest.getLoyaltyPoints();
+        Guest existingMember = controller.findGuestByIC(ic);
+        if (existingMember != null) {
             System.out.println("\n✨ Existing Member Recognized!");
-            System.out.printf("  Guest Name    : %s\n", name);
-            System.out.printf("  Loyalty Tier  : %s (%d pts)\n", tier, points);
+            displayGuestSummary(existingMember);
             System.out.println("  ℹ️  A NEW stay/reservation will be created for this member (new Confirmation No).");
+            name = existingMember.getGuestName();
         } else {
-            System.out.print("New Guest Detected. Enter Guest Name: ");
-            name = scanner.nextLine().trim();
-            if (name.isEmpty()) {
-                System.out.println("Error: Guest name cannot be empty.");
+            name = readRequiredTextOrBack("New Guest Detected. Enter Guest Name: ");
+            if (name == null)
                 return;
-            }
-
-            // Default new guest to Standard tier with 0 initial points
-            tier = "Standard";
-            points = 0;
             System.out.println("Assigned Default Loyalty Tier: [Standard] (0 pts)");
         }
-
-        BookingController.GuestView newGuest = controller.registerWalkInGuestView(name, ic, tier, points);
-
-        System.out.println("\n==================================================");
-        System.out.println("         WALK-IN REGISTRATION SUCCESSFUL          ");
-        System.out.println("==================================================");
-        System.out.printf(" Guest Name        : %s\n", newGuest.getGuestName());
-        System.out.printf(" IC / Passport     : %s\n", newGuest.getIcNo());
-        System.out.printf(" Confirmation No   : %s (Unique For This Stay)\n", newGuest.getConfirmationNumber());
-        System.out.printf(" Loyalty Tier      : %s (%d pts)\n", newGuest.getLoyaltyTier(), newGuest.getLoyaltyPoints());
-        System.out.printf(" Queue Position    : #%d\n", controller.getWaitingCount());
-        System.out.println("==================================================");
-        System.out.println("Guest has been added to the waiting queue.");
-    }
-
-    private void handleViewWaitingQueue() {
-        BookingController.GuestView[] queueList = controller.getWaitingQueueViews();
-
-        System.out.println("\n==================================================");
-        System.out.println("         CURRENT WAITING QUEUE (FIFO ORDER)       ");
-        System.out.println("==================================================");
-
-        if (queueList.length == 0) {
-            System.out.println(" The waiting queue is empty. No guests waiting.");
-        } else {
-            System.out.printf(" Total Guests Waiting: %d\n\n", queueList.length);
-            System.out.printf("%-6s | %-15s | %-12s | %-10s\n",
-                    "Pos", "Guest Name", "Confirm No", "Tier");
-            System.out.println("-------+------------------+--------------+-----------");
-            for (int i = 0; i < queueList.length; i++) {
-                BookingController.GuestView g = queueList[i];
-                String posLabel = (i == 0) ? "#1 [NEXT]" : "#" + (i + 1);
-                System.out.printf("%-9s | %-15s | %-12s | %-10s\n",
-                        posLabel, g.getGuestName(), g.getConfirmationNumber(), g.getLoyaltyTier());
-            }
-        }
-        System.out.println("==================================================");
+        Guest registered = controller.registerWalkInGuest(name, ic, "Standard", 0);
+        displayRegistrationSuccess(registered, controller.getWaitingCount());
     }
 
     private void handleProcessNextGuest() {
         System.out.println("\n--- Process Next Guest in Queue ---");
-
-        BookingController.GuestView nextGuest = controller.peekNextGuestView();
+        Guest nextGuest = controller.peekNextGuest();
         if (nextGuest == null) {
             System.out.println("The waiting queue is empty. No guest to process.");
             return;
         }
-
         System.out.println("Next guest in queue:");
-        System.out.printf("  Name: %s | Confirm No: %s | Tier: %s\n",
-                nextGuest.getGuestName(), nextGuest.getConfirmationNumber(),
-                nextGuest.getLoyaltyTier());
-
-        System.out.print("Enter Check-In Date (YYYY-MM-DD): ");
-        String checkInDate = scanner.nextLine().trim();
-        if (!isValidDateInput(checkInDate)) {
-            System.out.println("Error: Check-in date must be a valid YYYY-MM-DD date.");
+        displayNextGuest(nextGuest);
+        String[] stay = readStayPeriodOrBack("Enter Check-In Date (YYYY-MM-DD): ");
+        if (stay == null)
             return;
-        }
-        System.out.print("Enter Number of Nights: ");
-        int nights = readPositiveIntInput();
-        int stayValidation = controller.validateStayPeriod(checkInDate, nights);
-        if (stayValidation != 1) {
-            printStayValidationError(stayValidation);
-            return;
-        }
-
-        // Show date-aware availability, including a room with a non-overlapping future stay.
-        BookingController.RoomView[] availableRooms = controller.getAvailableRoomViews(checkInDate, nights);
-        if (availableRooms.length == 0) {
-            System.out.println("\nNo rooms are available for the requested stay period.");
+        String date = stay[0];
+        int nights = Integer.parseInt(stay[1]);
+        ListInterface<Room> availableRooms = controller.getAvailableRooms(date, nights);
+        displayRooms(availableRooms, "AVAILABLE ROOMS FOR REQUESTED STAY");
+        if (availableRooms.isEmpty()) {
             System.out.println("Guest remains in the queue.");
             return;
         }
-
-        printRooms(availableRooms, "AVAILABLE ROOMS FOR REQUESTED STAY");
-
-        System.out.print("Enter Room Number to assign: ");
-        String roomNo = scanner.nextLine().trim();
+        String room = readRequiredTextOrBack("Enter Room Number to assign: ");
+        if (room == null)
+            return;
         System.out.print("Special Request (leave blank for None): ");
-        String specialRequest = scanner.nextLine().trim();
-
-        int result = controller.processNextGuest(roomNo, checkInDate, nights, specialRequest);
-
-        switch (result) {
-            case 1:
-                BookingController.BookingView lastBooking = controller.getLastBookingView();
-                System.out.println("\n==================================================");
-                System.out.println("       BOOKING CONFIRMED SUCCESSFULLY!            ");
-                System.out.println("==================================================");
-                System.out.printf(" Booking ID        : %s\n", lastBooking.getBookingId());
-                System.out.printf(" Guest Name        : %s\n", lastBooking.getGuestName());
-                System.out.printf(" Confirmation No   : %s\n", lastBooking.getGuestConfirmationNumber());
-                System.out.printf(" Room Assigned     : Room %s (%s)\n",
-                        lastBooking.getRoomNumber(), lastBooking.getRoomType());
-                System.out.printf(" Check-In Date     : %s\n", lastBooking.getCheckInDate());
-                System.out.printf(" Expected Check-Out: %s\n", lastBooking.getCheckOutDate());
-                System.out.printf(" Duration          : %d Night(s)\n", lastBooking.getNumberOfNights());
-                System.out.printf(" Rate / Night      : RM %.2f\n", lastBooking.getRoomPrice());
-                System.out.printf(" Total Amount      : RM %.2f\n", lastBooking.getTotalPrice());
-                System.out.printf(" Special Request   : %s\n", lastBooking.getSpecialRequest());
-                System.out.println("==================================================");
-                System.out.printf(" Remaining in queue: %d guest(s)\n", controller.getWaitingCount());
-                break;
-            case -1:
-                System.out.println("Error: Queue is empty.");
-                break;
-            case -2:
-                System.out.println("Error: Room number not found.");
-                break;
-            case -3:
-                System.out.println("Error: Room " + roomNo + " is unavailable for the requested dates.");
-                break;
-            case -4:
-                System.out.println("Error: Check-in date must use YYYY-MM-DD format and be a valid date.");
-                break;
-            case -5:
-                System.out.println("Error: Stay must be between 1 and 30 nights.");
-                break;
-            case -6:
-                System.out.println("Error: Check-in date cannot be in the past.");
-                break;
-            case -7:
-                System.out.println("Error: Reservations can only be made up to 365 days in advance.");
-                break;
-        }
-    }
-
-    private void handleViewAllBookings() {
-        BookingController.BookingView[] bookings = controller.getAllBookingViews();
-
-        System.out.println(
-                "\n=========================================================================================================================");
-        System.out.println(
-                "                            ALL BOOKING RECORDS                                              ");
-        System.out.println(
-                "=========================================================================================================================");
-
-        if (bookings.length == 0) {
-            System.out.println(" No bookings found.");
-        } else {
-            System.out.printf("%-8s | %-12s | %-12s | %-8s | %-12s | %-12s | %-6s | %-10s | %-10s\n",
-                    "ID", "Guest", "Confirm No", "Room", "Check-In", "Check-Out", "Nights", "Total(RM)", "Status");
-            System.out.println(
-                    "-------------------------------------------------------------------------------------------------------------------------");
-            for (int i = 0; i < bookings.length; i++) {
-                BookingController.BookingView b = bookings[i];
-                System.out.printf("%-8s | %-12s | %-12s | %-8s | %-12s | %-12s | %-6d | %10.2f | %-10s\n",
-                        b.getBookingId(),
-                        truncate(b.getGuestName(), 12),
-                        b.getGuestConfirmationNumber(),
-                        b.getRoomNumber(),
-                        b.getCheckInDate(),
-                        b.getCheckOutDate(),
-                        b.getNumberOfNights(),
-                        b.getTotalPrice(),
-                        b.getBookingStatus());
-            }
-        }
-        System.out.println(
-                "=========================================================================================================================");
-    }
-
-    private void handleCancelBooking() {
-        System.out.println("\n--- Cancel a Booking ---");
-        handleViewAllBookings();
-
-        System.out.print("Enter Booking ID to cancel (e.g. BK0001): ");
-        String bookingId = scanner.nextLine().trim();
-        System.out.print("Cancellation reason: ");
-        String reason = scanner.nextLine().trim();
-        System.out.print("Processed by (staff name): ");
-        String staffName = scanner.nextLine().trim();
-
-        int result = controller.cancelBooking(bookingId, reason, staffName);
-        switch (result) {
-            case 1:
-                System.out.println("\nBooking " + bookingId + " has been cancelled successfully.");
-                System.out.println("The reservation dates were released; the room's physical housekeeping status was preserved.");
-                break;
-            case -1:
-                System.out.println("Error: Booking ID '" + bookingId + "' not found.");
-                break;
-            case -2:
-                System.out.println("Error: Booking '" + bookingId + "' is already cancelled.");
-                break;
-            case -3:
-                System.out.println("Error: Cannot cancel booking '" + bookingId
-                        + "'. Guest is currently CHECKED IN at Front Desk.");
-                break;
-            case -4:
-                System.out.println("Error: Cannot cancel booking '" + bookingId + "'. Guest has ALREADY CHECKED OUT.");
-                break;
-            case -5:
-                System.out.println("Error: A NoShow reservation can no longer be cancelled.");
-                break;
-        }
+        String request = scanner.nextLine().trim();
+        int result = controller.processNextGuest(room, date, nights, request);
+        displayProcessNextGuestResult(result, room);
     }
 
     private void handleSearchBooking() {
         System.out.println("\n--- Search Booking ---");
-        System.out.print("Search by (1) Booking ID or (2) Confirmation No.: ");
-        int choice = readIntInput();
-        System.out.print("Enter search value: ");
-        String value = scanner.nextLine().trim();
-        BookingController.BookingView booking = (choice == 2) ? controller.findBookingByConfirmationView(value)
-                : controller.findBookingByIdView(value);
-        if (booking == null) {
-            System.out.println("No booking record was found.");
+        displayAllBookings(controller.getAllBookings());
+        System.out.print("Search by (1) Booking ID or (2) Confirmation No. (0 to return): ");
+        int choice = readChoiceNumber(1, 2);
+        if (choice == 0)
             return;
-        }
-        printBookingDetails(booking);
+        String value = readRequiredTextOrBack("Enter search value: ");
+        if (value == null)
+            return;
+        Booking booking = choice == 2
+                ? controller.findBookingByConfirmation(value)
+                : controller.findBookingById(value);
+        if (booking == null)
+            System.out.println("No booking record was found.");
+        else
+            displayBookingDetails(booking);
     }
 
     private void handleModifyBooking() {
         System.out.println("\n--- Modify Confirmed Booking ---");
-        System.out.print("Enter Booking ID: ");
-        String bookingId = scanner.nextLine().trim();
-        BookingController.BookingView existing = controller.findBookingByIdView(bookingId);
+        displayAllBookings(controller.getAllBookings());
+        String id = readRequiredTextOrBack("Enter Booking ID to modify (e.g. BK0002, 0 to return): ");
+        if (id == null)
+            return;
+        Booking existing = controller.findBookingById(id);
         if (existing == null) {
-            System.out.println("Error: Booking ID not found.");
+            System.out.println("Error: Booking ID '" + id + "' was not found. Please choose an ID from the list above.");
             return;
         }
-        if (!"Confirmed".equalsIgnoreCase(existing.getBookingStatus())) {
-            System.out.println("Only a confirmed, not-yet-checked-in booking can be modified.");
+        if (!controller.isBookingEditable(id)) {
+            displayBookingNotEditableMessage(existing);
             return;
         }
-        printBookingDetails(existing);
-
-        System.out.print("New Check-In Date (YYYY-MM-DD): ");
-        String checkInDate = scanner.nextLine().trim();
-        if (!isValidDateInput(checkInDate)) {
-            System.out.println("Error: Check-in date must be a valid YYYY-MM-DD date.");
+        displayBookingDetails(existing);
+        String[] stay = readStayPeriodOrBack("New Check-In Date (YYYY-MM-DD): ");
+        if (stay == null)
             return;
-        }
-        System.out.print("New Number of Nights: ");
-        int nights = readPositiveIntInput();
-        int stayValidation = controller.validateStayPeriod(checkInDate, nights);
-        if (stayValidation != 1) {
-            printStayValidationError(stayValidation);
+        String date = stay[0];
+        int nights = Integer.parseInt(stay[1]);
+        ListInterface<Room> availableRooms = controller.getAvailableRoomsForUpdate(id, date, nights);
+        displayRooms(availableRooms, "ROOMS AVAILABLE FOR NEW STAY PERIOD");
+        String room = readRequiredTextOrBack("New Room Number: ");
+        if (room == null)
             return;
-        }
-        BookingController.RoomView[] rooms = controller.getAvailableRoomViewsForUpdate(bookingId, checkInDate, nights);
-        printRooms(rooms, "ROOMS AVAILABLE FOR NEW STAY PERIOD");
-        System.out.print("New Room Number: ");
-        String roomNumber = scanner.nextLine().trim();
         System.out.print("Special Request (leave blank for None): ");
-        String specialRequest = scanner.nextLine().trim();
+        String request = scanner.nextLine().trim();
+        int result = controller.updateBooking(id, room, date, nights, request);
+        displayUpdateBookingResult(result, id);
+    }
 
-        int result = controller.updateBooking(bookingId, roomNumber, checkInDate, nights, specialRequest);
+    private void displayBookingNotEditableMessage(Booking booking) {
+        String id = booking.getBookingId();
+        String status = booking.getBookingStatus();
+        System.out.println("Booking '" + id + "' cannot be modified because its current status is [" + status + "].");
+        if ("CheckedIn".equalsIgnoreCase(status))
+            System.out.println("The guest has already checked in. Use the Front Desk module for active-stay changes.");
+        else if ("CheckedOut".equalsIgnoreCase(status))
+            System.out.println("This stay has already been completed, so its reservation details are historical records.");
+        else if ("Cancelled".equalsIgnoreCase(status))
+            System.out.println("A cancelled booking is retained for audit history and cannot be reactivated here.");
+        else if ("NoShow".equalsIgnoreCase(status))
+            System.out.println("The scheduled arrival has already been recorded as a no-show.");
+        else
+            System.out.println("Only a booking with [Confirmed] status can be modified.");
+    }
+
+    private void handleCancelBooking() {
+        System.out.println("\n--- Cancel a Booking ---");
+        displayAllBookings(controller.getAllBookings());
+        String id = readRequiredTextOrBack("Enter Booking ID to cancel (e.g. BK0001): ");
+        if (id == null)
+            return;
+        String reason = readRequiredTextOrBack("Cancellation reason: ");
+        if (reason == null)
+            return;
+        String staff = readRequiredTextOrBack("Processed by (staff name): ");
+        if (staff == null)
+            return;
+        int result = controller.cancelBooking(id, reason, staff);
+        displayCancelBookingResult(result, id);
+    }
+
+    private void handleCancelWaitingRegistration() {
+        System.out.println("\n--- Cancel Waiting Registration ---");
+        displayWaitingQueue(controller.getWaitingQueueList());
+        String confirmation = readRequiredTextOrBack("Enter Confirmation No. to remove from queue: ");
+        if (confirmation != null) {
+            int result = controller.cancelWaitingRegistration(confirmation);
+            displayCancelWaitingResult(result);
+        }
+    }
+
+    private void handleViewAvailableRooms() {
+        System.out.println("\n--- View Available Rooms for a Stay ---");
+        String[] stay = readStayPeriodOrBack("Enter Check-In Date (YYYY-MM-DD): ");
+        if (stay == null)
+            return;
+        String date = stay[0];
+        int nights = Integer.parseInt(stay[1]);
+        displayRooms(controller.getAvailableRooms(date, nights), "AVAILABLE ROOMS FOR REQUESTED STAY");
+    }
+
+    private void displayReport1() {
+        System.out.println("\n--- REPORT 1: BOOKING SUMMARY (MULTI-CRITERIA FILTER & SORT) ---");
+        String type = readMenuSelection("Select Room Type filter:",
+                new String[] { "Standard Room", "Deluxe Suite", "Presidential Suite", "All" },
+                new String[] { "Standard Room", "Deluxe Suite", "Presidential Suite", "ALL" });
+        if (type == null)
+            return;
+        String status = readMenuSelection("Select Booking Status filter:",
+                new String[] { "Confirmed", "Checked In", "Checked Out", "Cancelled", "No-Show", "All" },
+                new String[] { "Confirmed", "CheckedIn", "CheckedOut", "Cancelled", "NoShow", "ALL" });
+        if (status == null)
+            return;
+        String start = readOptionalDateFilter("Select Start Check-In Date filter:");
+        if (start == null)
+            return;
+        String end = readOptionalDateFilter("Select End Check-In Date filter:");
+        if (end == null)
+            return;
+        if (!"ALL".equals(start) && !"ALL".equals(end) && start.compareTo(end) > 0) {
+            System.out.println("Error: Start date cannot be after end date.");
+            return;
+        }
+        System.out.print("Enter Minimum Number of Nights (Enter 0 for no filter): ");
+        int min = readNonNegativeIntInput();
+        System.out.print("Sort by total price? (1 for Ascending, 2 for Descending): ");
+        int sortChoice = readChoiceNumber(1, 2);
+        if (sortChoice == 0)
+            return;
+        boolean asc = sortChoice == 1;
+        ListInterface<Booking> filtered = controller.getFilteredAndSortedBookings(
+                type, status, start, end, min, asc);
+        displayBookingReport(filtered, controller.getBookingMetrics(filtered),
+                type, status, start, end, min, asc);
+    }
+
+    private void displayReport2() {
+        System.out.println("\n--- REPORT 2: GUEST REGISTRATION & TIER ANALYSIS ---");
+        String tier = readMenuSelection("Select Loyalty Tier filter:",
+                new String[] { "Standard", "Silver", "Gold", "Platinum", "All" },
+                new String[] { "Standard", "Silver", "Gold", "Platinum", "ALL" });
+        if (tier == null)
+            return;
+        String status = readMenuSelection("Select Guest Status filter:",
+                new String[] { "Waiting", "Confirmed", "Checked In", "Checked Out", "Cancelled", "No-Show", "All" },
+                new String[] { "Waiting", "Confirmed", "CheckedIn", "CheckedOut", "Cancelled", "NoShow", "ALL" });
+        if (status == null)
+            return;
+        System.out.print("Sort by Confirmation No? (1 for Ascending, 2 for Descending): ");
+        int sortChoice = readChoiceNumber(1, 2);
+        if (sortChoice == 0)
+            return;
+        boolean asc = sortChoice == 1;
+        ListInterface<Guest> filtered = controller.getFilteredAndSortedGuests(tier, status, asc);
+        displayGuestReport(filtered, controller.getRegistrationSummary());
+    }
+
+    private void displayGuestSummary(Guest guest) {
+        System.out.printf("  Guest Name    : %s%n  Loyalty Tier  : %s (%d pts)%n",
+                guest.getGuestName(), guest.getLoyaltyTier(), guest.getLoyaltyPoints());
+    }
+
+    private void displayRegistrationSuccess(Guest guest, int queuePosition) {
+        System.out.printf("%n==================================================%n"
+                + "         WALK-IN REGISTRATION SUCCESSFUL          %n"
+                + "==================================================%n"
+                + " Guest Name        : %s%n"
+                + " IC / Passport     : %s%n"
+                + " Confirmation No   : %s (Unique For This Stay)%n"
+                + " Loyalty Tier      : %s (%d pts)%n"
+                + " Queue Position    : #%d%n"
+                + "==================================================%n"
+                + "Guest has been added to the waiting queue.%n",
+                guest.getGuestName(), guest.getIcNo(), guest.getConfirmationNumber(),
+                guest.getLoyaltyTier(), guest.getLoyaltyPoints(), queuePosition);
+    }
+
+    private void displayWaitingQueue(ListInterface<Guest> queueList) {
+        System.out.println("\nCURRENT WAITING QUEUE (FIFO ORDER)");
+        if (queueList.isEmpty()) {
+            System.out.println("The waiting queue is empty. No guests waiting.");
+        } else {
+            System.out.println("Total Guests Waiting: " + queueList.getNumberOfEntries());
+            int[] widths = { 10, 18, 12, 10 };
+            ConsoleTable.printHeader(new String[] { "Position", "Guest Name", "Confirm No", "Tier" }, widths);
+            for (int i = 0; i < queueList.getNumberOfEntries(); i++) {
+                Guest guest = queueList.get(i);
+                String position = (i == 0) ? "#1 [NEXT]" : "#" + (i + 1);
+                ConsoleTable.printRow(new String[] { position, guest.getGuestName(),
+                        guest.getConfirmationNumber(), guest.getLoyaltyTier() }, widths);
+            }
+            ConsoleTable.printFooter(widths);
+        }
+    }
+
+    private void displayNextGuest(Guest guest) {
+        int[] widths = { 18, 12, 10 };
+        ConsoleTable.printHeader(new String[] { "Guest Name", "Confirm No", "Tier" }, widths);
+        ConsoleTable.printRow(new String[] { guest.getGuestName(), guest.getConfirmationNumber(),
+                guest.getLoyaltyTier() }, widths);
+        ConsoleTable.printFooter(widths);
+    }
+
+    private void displayProcessNextGuestResult(int result, String roomNumber) {
+        if (result == 1) {
+            Booking booking = controller.getLastBooking();
+            if (booking == null) {
+                System.out.println("Error: Unable to display the newly created booking.");
+                return;
+            }
+            System.out.printf("%n==================================================%n"
+                    + "       BOOKING CONFIRMED SUCCESSFULLY!            %n"
+                    + "==================================================%n"
+                    + " Booking ID        : %s%n Guest Name        : %s%n Confirmation No   : %s%n"
+                    + " Room Assigned     : Room %s (%s)%n Check-In Date     : %s%n"
+                    + " Expected Check-Out: %s%n Duration          : %d Night(s)%n"
+                    + " Rate / Night      : RM %.2f%n Total Amount      : RM %.2f%n"
+                    + " Special Request   : %s%n"
+                    + "==================================================%n"
+                    + " Remaining in queue: %d guest(s)%n",
+                    booking.getBookingId(), booking.getGuestName(), booking.getGuestConfirmationNumber(),
+                    booking.getRoomNumber(), booking.getRoomType(), booking.getCheckInDate(),
+                    booking.getCheckOutDate(), booking.getNumberOfNights(), booking.getRoomPrice(),
+                    booking.getTotalPrice(), booking.getSpecialRequest(), controller.getWaitingCount());
+        } else if (result == -1) {
+            System.out.println("Error: Queue is empty.");
+        } else if (result == -2) {
+            System.out.println("Error: Room number not found.");
+        } else if (result == -3) {
+            System.out.println("Error: Room " + roomNumber + " is unavailable for the requested dates.");
+        } else if (result == -4) {
+            System.out.println("Error: Check-in date must use YYYY-MM-DD format and be a valid date.");
+        } else if (result == -5) {
+            System.out.println("Error: Stay must be between 1 and 30 nights.");
+        } else if (result == -6) {
+            System.out.println("Error: Check-in date cannot be in the past.");
+        } else if (result == -7) {
+            System.out.println("Error: Reservations can only be made up to 365 days in advance.");
+        } else {
+            System.out.println("Error: Unable to process the waiting guest.");
+        }
+    }
+
+    private void displayRooms(ListInterface<Room> rooms, String title) {
+        System.out.println("\n" + title);
+        if (rooms.isEmpty()) {
+            System.out.println("No rooms match the requested availability.");
+        } else {
+            int[] widths = { 10, 24, 16, 12 };
+            ConsoleTable.printHeader(new String[] { "Room No", "Room Type", "Availability", "Price/Night" }, widths);
+            for (int i = 0; i < rooms.getNumberOfEntries(); i++) {
+                Room room = rooms.get(i);
+                ConsoleTable.printRow(new String[] { room.getRoomNumber(), room.getRoomType(), "Available",
+                        String.format("RM %.2f", room.getPrice()) }, widths);
+            }
+            ConsoleTable.printFooter(widths);
+        }
+    }
+
+    private void displayAllBookings(ListInterface<Booking> bookings) {
+        System.out.println("\nALL BOOKING RECORDS");
+        if (bookings.isEmpty()) {
+            System.out.println("No bookings found.");
+        } else {
+            int[] widths = { 8, 14, 12, 8, 12, 12, 6, 11, 10 };
+            ConsoleTable.printHeader(new String[] { "ID", "Guest", "Confirm No", "Room", "Check-In", "Check-Out",
+                    "Nights", "Total (RM)", "Status" }, widths);
+            for (int i = 0; i < bookings.getNumberOfEntries(); i++) {
+                Booking booking = bookings.get(i);
+                ConsoleTable.printRow(new String[] { booking.getBookingId(), booking.getGuestName(),
+                        booking.getGuestConfirmationNumber(), booking.getRoomNumber(), booking.getCheckInDate(),
+                        booking.getCheckOutDate(), String.valueOf(booking.getNumberOfNights()),
+                        String.format("%.2f", booking.getTotalPrice()), booking.getBookingStatus() }, widths);
+            }
+            ConsoleTable.printFooter(widths);
+        }
+    }
+
+    private void displayBookingDetails(Booking booking) {
+        System.out.println("\n==================================================");
+        System.out.println("                 BOOKING DETAILS                  ");
+        System.out.println("==================================================");
+        System.out.printf(" Booking ID       : %s%n Guest            : %s (%s)%n Room             : %s (%s)%n"
+                + " Stay             : %s to %s (%d night(s))%n Rate / Total     : RM %.2f / RM %.2f%n"
+                + " Status           : %s%n Special Request  : %s%n Created On       : %s%n",
+                booking.getBookingId(), booking.getGuestName(), booking.getGuestConfirmationNumber(),
+                booking.getRoomNumber(), booking.getRoomType(), booking.getCheckInDate(), booking.getCheckOutDate(),
+                booking.getNumberOfNights(), booking.getRoomPrice(), booking.getTotalPrice(),
+                booking.getBookingStatus(), booking.getSpecialRequest(), booking.getBookingCreatedDate());
+        if (!"N/A".equals(booking.getActualCheckInDate()))
+            System.out.printf(" Actual Check-In  : %s%n", booking.getActualCheckInDate());
+        if (!"N/A".equals(booking.getActualCheckOutDate()))
+            System.out.printf(" Actual Check-Out : %s (%d actual night(s))%n", booking.getActualCheckOutDate(),
+                    booking.getActualNightsStayed());
+        if ("NoShow".equalsIgnoreCase(booking.getBookingStatus()))
+            System.out.printf(" No-Show Recorded : %s%n", booking.getNoShowDate());
+        if ("Cancelled".equalsIgnoreCase(booking.getBookingStatus()))
+            System.out.printf(" Cancelled On     : %s%n Cancelled By     : %s%n Cancellation Note: %s%n",
+                    booking.getCancellationDate(), booking.getCancelledBy(), booking.getCancellationReason());
+        System.out.println("==================================================");
+    }
+
+    private void displayCancelBookingResult(int result, String bookingId) {
+        if (result == 1)
+            System.out.println("Booking " + bookingId
+                    + " has been cancelled successfully.\nThe reservation dates were released; the room's physical housekeeping status was preserved.");
+        else if (result == -1)
+            System.out.println("Error: Booking ID '" + bookingId + "' not found.");
+        else if (result == -2)
+            System.out.println("Error: Booking '" + bookingId + "' is already cancelled.");
+        else if (result == -3)
+            System.out.println("Error: Cannot cancel booking '" + bookingId
+                    + "'. Guest is currently CHECKED IN at Front Desk.");
+        else if (result == -4)
+            System.out.println("Error: Cannot cancel booking '" + bookingId + "'. Guest has ALREADY CHECKED OUT.");
+        else if (result == -5)
+            System.out.println("Error: A NoShow reservation can no longer be cancelled.");
+        else
+            System.out.println("Error: Booking could not be cancelled.");
+    }
+
+    private void displayUpdateBookingResult(int result, String bookingId) {
         if (result == 1) {
             System.out.println("Booking updated successfully and synchronized with the Front Desk guest record.");
-            printBookingDetails(controller.findBookingByIdView(bookingId));
+            Booking updated = controller.findBookingById(bookingId);
+            if (updated != null)
+                displayBookingDetails(updated);
         } else if (result == -3) {
             System.out.println("Error: Room number not found.");
-        } else if (result == -4 || result == -6 || result == -7) {
-            printStayValidationError(result);
+        } else if (result == -4) {
+            System.out.println("Error: Date must be a real calendar date in YYYY-MM-DD format.");
         } else if (result == -5) {
+            System.out.println("Error: Stay duration must be between 1 and 30 nights.");
+        } else if (result == -6) {
+            System.out.println("Error: Check-in date cannot be earlier than today (" + LocalDate.now() + ").");
+        } else if (result == -7) {
+            System.out.println("Error: Check-in cannot be more than 365 days from today.");
+        } else if (result == -8) {
             System.out.println("Error: Selected room is unavailable for the requested dates.");
         } else {
             System.out.println("Error: This booking cannot be modified.");
         }
     }
 
-    private void handleCancelWaitingRegistration() {
-        System.out.println("\n--- Cancel Waiting Registration ---");
-        handleViewWaitingQueue();
-        System.out.print("Enter Confirmation No. to remove from queue: ");
-        String confirmationNumber = scanner.nextLine().trim();
-        if (controller.cancelWaitingRegistration(confirmationNumber) == 1) {
+    private void displayCancelWaitingResult(int result) {
+        if (result == 1)
             System.out.println("Waiting registration cancelled. All remaining guests keep their original FIFO order.");
-        } else {
+        else
             System.out.println("Error: No waiting guest has that confirmation number.");
-        }
     }
 
-    private void handleViewAvailableRooms() {
-        System.out.println("\n--- View Available Rooms for a Stay ---");
-        System.out.print("Enter Check-In Date (YYYY-MM-DD): ");
-        String checkInDate = scanner.nextLine().trim();
-        if (!isValidDateInput(checkInDate)) {
-            System.out.println("Error: Check-in date must be a valid YYYY-MM-DD date.");
+    private void displayBookingReport(ListInterface<Booking> filtered, double[] metrics,
+            String typeFilter, String statusFilter, String startDate, String endDate,
+            int minNights, boolean ascending) {
+        System.out.println("\nBOOKING REPORT");
+        System.out.printf(
+                "Results: %d | Filters: Type=%s, Status=%s, Check-In=%s to %s, Min Nights=%d, Total=%s%n",
+                filtered.getNumberOfEntries(), typeFilter, statusFilter, startDate, endDate, minNights,
+                ascending ? "Low to High" : "High to Low");
+        if (filtered.isEmpty()) {
+            System.out.println("No bookings match the specified criteria.");
             return;
         }
-        System.out.print("Enter Number of Nights: ");
-        int nights = readPositiveIntInput();
-        int stayValidation = controller.validateStayPeriod(checkInDate, nights);
-        if (stayValidation != 1) {
-            printStayValidationError(stayValidation);
+        int[] widths = { 8, 14, 8, 18, 12, 6, 11, 10 };
+        ConsoleTable.printHeader(new String[] { "ID", "Guest", "Room", "Room Type", "Check-In", "Nights",
+                "Total (RM)", "Status" }, widths);
+        for (int i = 0; i < filtered.getNumberOfEntries(); i++) {
+            Booking booking = filtered.get(i);
+            ConsoleTable.printRow(new String[] { booking.getBookingId(), booking.getGuestName(),
+                    booking.getRoomNumber(), booking.getRoomType(), booking.getCheckInDate(),
+                    String.valueOf(booking.getNumberOfNights()), String.format("%.2f", booking.getTotalPrice()),
+                    booking.getBookingStatus() }, widths);
+        }
+        ConsoleTable.printFooter(widths);
+        System.out.printf(
+                "Total Value (excluding cancelled/no-show): RM %.2f%nActive / Cancelled / NoShow: %.0f / %.0f / %.0f | Average Stay: %.2f nights%n",
+                metrics[3], metrics[0], metrics[1], metrics[5], metrics[4]);
+    }
+
+    private void displayGuestReport(ListInterface<Guest> filtered, int[] summary) {
+        System.out.println("\nGUEST REGISTRATION & TIER ANALYSIS REPORT");
+        int[] summaryWidths = { 22, 8 };
+        ConsoleTable.printHeader(new String[] { "Summary", "Count" }, summaryWidths);
+        String[] labels = { "Total Registered", "Currently Waiting", "Confirmed", "Checked In", "Checked Out",
+                "Cancelled", "No-Show", "Platinum Members", "Gold Members", "Silver Members", "Standard Members" };
+        for (int i = 0; i < labels.length; i++)
+            ConsoleTable.printRow(new String[] { labels[i], String.valueOf(summary[i]) }, summaryWidths);
+        ConsoleTable.printFooter(summaryWidths);
+        System.out.println("Filtered Results: " + filtered.getNumberOfEntries() + " guest(s) match criteria");
+        if (filtered.isEmpty()) {
+            System.out.println("No guests match the specified criteria.");
             return;
         }
-        printRooms(controller.getAvailableRoomViews(checkInDate, nights), "AVAILABLE ROOMS FOR REQUESTED STAY");
-    }
-
-    private void printBookingDetails(BookingController.BookingView booking) {
-        System.out.println("\n==================================================");
-        System.out.println("                 BOOKING DETAILS                  ");
-        System.out.println("==================================================");
-        System.out.printf(" Booking ID       : %s%n", booking.getBookingId());
-        System.out.printf(" Guest            : %s (%s)%n", booking.getGuestName(), booking.getGuestConfirmationNumber());
-        System.out.printf(" Room             : %s (%s)%n", booking.getRoomNumber(), booking.getRoomType());
-        System.out.printf(" Stay             : %s to %s (%d night(s))%n", booking.getCheckInDate(),
-                booking.getCheckOutDate(), booking.getNumberOfNights());
-        System.out.printf(" Rate / Total     : RM %.2f / RM %.2f%n", booking.getRoomPrice(), booking.getTotalPrice());
-        System.out.printf(" Status           : %s%n", booking.getBookingStatus());
-        System.out.printf(" Special Request  : %s%n", booking.getSpecialRequest());
-        System.out.printf(" Created On       : %s%n", booking.getBookingCreatedDate());
-        if (!"N/A".equals(booking.getActualCheckInDate())) {
-            System.out.printf(" Actual Check-In  : %s%n", booking.getActualCheckInDate());
+        int[] widths = { 6, 18, 13, 10, 12 };
+        ConsoleTable.printHeader(new String[] { "Rank", "Guest Name", "Confirm No", "Tier", "Status" }, widths);
+        for (int i = 0; i < filtered.getNumberOfEntries(); i++) {
+            Guest guest = filtered.get(i);
+            ConsoleTable.printRow(new String[] { "#" + (i + 1), guest.getGuestName(),
+                    guest.getConfirmationNumber(), guest.getLoyaltyTier(),
+                    controller.getGuestOperationalStatus(guest) }, widths);
         }
-        if (!"N/A".equals(booking.getActualCheckOutDate())) {
-            System.out.printf(" Actual Check-Out : %s (%d actual night(s))%n", booking.getActualCheckOutDate(),
-                    booking.getActualNightsStayed());
-        }
-        if ("NoShow".equalsIgnoreCase(booking.getBookingStatus())) {
-            System.out.printf(" No-Show Recorded : %s%n", booking.getNoShowDate());
-        }
-        if ("Cancelled".equalsIgnoreCase(booking.getBookingStatus())) {
-            System.out.printf(" Cancelled On     : %s%n", booking.getCancellationDate());
-            System.out.printf(" Cancelled By     : %s%n", booking.getCancelledBy());
-            System.out.printf(" Cancellation Note: %s%n", booking.getCancellationReason());
-        }
-        System.out.println("==================================================");
-    }
-
-    private void printRooms(BookingController.RoomView[] rooms, String title) {
-        System.out.println("\n==========================================================================");
-        System.out.printf(" %-72s%n", title);
-        System.out.println("==========================================================================");
-        if (rooms.length == 0) {
-            System.out.println(" No rooms match the requested availability.");
-        } else {
-            System.out.printf("%-10s | %-26s | %-16s | %-10s%n", "Room No", "Room Type", "Selected Dates", "Price/Night");
-            System.out.println("==========================================================================");
-            for (int i = 0; i < rooms.length; i++) {
-                BookingController.RoomView room = rooms[i];
-                System.out.printf("%-10s | %-26s | %-16s | RM %7.2f%n", room.getRoomNumber(),
-                        room.getRoomType(), "Available", room.getPrice());
-            }
-        }
-        System.out.println("==========================================================================");
-    }
-
-    private void displayReport1() {
-        System.out.println("\n--- REPORT 1: BOOKING SUMMARY (MULTI-CRITERIA FILTER & SORT) ---");
-
-        System.out.print("Enter Room Type filter (Deluxe Suite / Presidential Suite / Standard Room / ALL): ");
-        String typeFilter = readChoice("Deluxe Suite", "Presidential Suite", "Standard Room", "ALL");
-
-        System.out.print("Enter Booking Status filter (Confirmed / CheckedIn / CheckedOut / Cancelled / NoShow / ALL): ");
-        String statusFilter = readChoice("Confirmed", "CheckedIn", "CheckedOut", "Cancelled", "NoShow", "ALL");
-
-        System.out.print("Start Check-In Date (YYYY-MM-DD, or ALL): ");
-        String startDate = readDateOrAll();
-        System.out.print("End Check-In Date (YYYY-MM-DD, or ALL): ");
-        String endDate = readDateOrAll();
-        if (!"ALL".equals(startDate) && !"ALL".equals(endDate) && startDate.compareTo(endDate) > 0) {
-            System.out.println("Error: Start date cannot be after end date.");
-            return;
-        }
-
-        System.out.print("Enter Minimum Number of Nights (Enter 0 for no filter): ");
-        int minNights = readNonNegativeIntInput();
-
-        System.out.print("Sort by total price? (1 for Ascending, 2 for Descending): ");
-        int sortChoice = readChoiceNumber(1, 2);
-        boolean ascending = sortChoice == 1;
-
-        BookingController.BookingView[] filtered = controller.getFilteredAndSortedBookingViews(
-                typeFilter, statusFilter, startDate, endDate, minNights, ascending);
-
-        System.out.println(
-                "\n=============================================================================================");
-        System.out.printf(" REPORT RESULTS: %d booking(s) match criteria\n", filtered.length);
-        System.out.printf(" Filters: Type=%s | Status=%s | Check-In=%s to %s | Min Nights=%d | Total=%s%n",
-                typeFilter, statusFilter, startDate, endDate, minNights, ascending ? "Low to High" : "High to Low");
-        System.out.println(
-                "=============================================================================================");
-
-        if (filtered.length == 0) {
-            System.out.println(" No bookings match the specified criteria.");
-        } else {
-            System.out.printf("%-8s | %-12s | %-8s | %-16s | %-12s | %-6s | %-10s | %-10s\n",
-                    "ID", "Guest", "Room", "Type", "Check-In", "Nights", "Total(RM)", "Status");
-            System.out.println(
-                    "---------------------------------------------------------------------------------------------");
-
-            double grandTotal = 0;
-            for (int i = 0; i < filtered.length; i++) {
-                BookingController.BookingView b = filtered[i];
-                System.out.printf("%-8s | %-12s | %-8s | %-16s | %-12s | %-6d | %10.2f | %-10s\n",
-                        b.getBookingId(),
-                        truncate(b.getGuestName(), 12),
-                        b.getRoomNumber(),
-                        truncate(b.getRoomType(), 16),
-                        b.getCheckInDate(),
-                        b.getNumberOfNights(),
-                        b.getTotalPrice(),
-                        b.getBookingStatus());
-                if (!"Cancelled".equalsIgnoreCase(b.getBookingStatus())
-                        && !"NoShow".equalsIgnoreCase(b.getBookingStatus())) {
-                    grandTotal += b.getTotalPrice();
-                }
-            }
-            System.out.println(
-                    "---------------------------------------------------------------------------------------------");
-            double[] metrics = controller.getBookingViewMetrics(filtered);
-            System.out.printf(" Total Value (excluding cancelled and no-show): RM %.2f%n", grandTotal);
-            System.out.printf(" Active / Cancelled / NoShow: %.0f / %.0f / %.0f | Average Stay: %.2f nights%n",
-                    metrics[0], metrics[1], metrics[5], metrics[4]);
-        }
-        System.out.println(
-                "=============================================================================================");
-    }
-
-    private void displayReport2() {
-        System.out.println("\n--- REPORT 2: GUEST REGISTRATION & TIER ANALYSIS ---");
-
-        System.out.print("Enter Loyalty Tier filter (Platinum / Gold / Silver / Standard / ALL): ");
-        String tierFilter = readChoice("Platinum", "Gold", "Silver", "Standard", "ALL");
-
-        System.out.print("Enter Status filter (Waiting / Confirmed / CheckedIn / CheckedOut / Cancelled / NoShow / ALL): ");
-        String statusFilter = readChoice("Waiting", "Confirmed", "CheckedIn", "CheckedOut", "Cancelled", "NoShow", "ALL");
-
-        System.out.print("Sort by Confirmation No? (1 for Ascending, 2 for Descending): ");
-        int sortChoice = readChoiceNumber(1, 2);
-        boolean ascending = sortChoice == 1;
-
-        BookingController.GuestView[] filtered = controller.getFilteredAndSortedGuestViews(
-                tierFilter, statusFilter, ascending);
-
-        // Summary statistics
-        int[] summary = controller.getRegistrationSummary();
-
-        System.out.println("\n==================================================");
-        System.out.println("   GUEST REGISTRATION & TIER ANALYSIS REPORT      ");
-        System.out.println("==================================================");
-        System.out.printf(" Total Registered   : %d\n", summary[0]);
-        System.out.printf(" Currently Waiting  : %d\n", summary[1]);
-        System.out.printf(" Confirmed          : %d\n", summary[2]);
-        System.out.printf(" Checked In         : %d\n", summary[3]);
-        System.out.printf(" Checked Out        : %d\n", summary[4]);
-        System.out.printf(" Cancelled          : %d\n", summary[5]);
-        System.out.printf(" No-Show            : %d\n", summary[6]);
-        System.out.println("--------------------------------------------------");
-        System.out.printf(" Platinum Members   : %d\n", summary[7]);
-        System.out.printf(" Gold Members       : %d\n", summary[8]);
-        System.out.printf(" Silver Members     : %d\n", summary[9]);
-        System.out.printf(" Standard Members   : %d\n", summary[10]);
-        System.out.println("==================================================");
-
-        System.out.printf("\n Filtered Results: %d guest(s) match criteria\n\n", filtered.length);
-
-        if (filtered.length == 0) {
-            System.out.println(" No guests match the specified criteria.");
-        } else {
-            System.out.printf("%-5s | %-15s | %-12s | %-10s | %-10s\n",
-                    "Rank", "Guest Name", "Confirm No", "Tier", "Status");
-            System.out.println("------+------------------+--------------+------------+-----------");
-
-            for (int i = 0; i < filtered.length; i++) {
-                BookingController.GuestView g = filtered[i];
-                String status = g.getBookingStatus();
-                System.out.printf("#%-4d | %-15s | %-12s | %-10s | %-10s\n",
-                        (i + 1), g.getGuestName(), g.getConfirmationNumber(),
-                        g.getLoyaltyTier(), status);
-            }
-        }
-        System.out.println("==================================================");
-    }
-
-    private String truncate(String text, int maxLen) {
-        if (text == null)
-            return "";
-        return text.length() <= maxLen ? text : text.substring(0, maxLen - 2) + "..";
+        ConsoleTable.printFooter(widths);
     }
 
     private int readIntInput() {
         while (true) {
             try {
-                String input = scanner.nextLine().trim();
-                return Integer.parseInt(input);
+                return Integer.parseInt(scanner.nextLine().trim());
             } catch (NumberFormatException e) {
-                System.out.print("Invalid input. Please enter a valid integer: ");
+                System.out.println("Wrong input");
+                System.out.print("Enter again, or enter 0 to return: ");
             }
         }
     }
 
     private int readPositiveIntInput() {
-        while (true) {
-            int val = readIntInput();
-            if (val > 0)
-                return val;
-            System.out.print("Value must be greater than 0. Please enter again: ");
-        }
+        int value;
+        do {
+            value = readIntInput();
+            if (value < 0) {
+                System.out.println("Wrong input");
+                System.out.print("Enter again, or enter 0 to return: ");
+            }
+        } while (value < 0);
+        return value;
     }
 
     private int readNonNegativeIntInput() {
-        while (true) {
-            int value = readIntInput();
-            if (value >= 0) return value;
-            System.out.print("Value cannot be negative. Please enter again: ");
-        }
+        int value;
+        do {
+            value = readIntInput();
+            if (value < 0) {
+                System.out.println("Wrong input");
+                System.out.print("Enter a non-negative value: ");
+            }
+        } while (value < 0);
+        return value;
     }
 
     private int readChoiceNumber(int first, int second) {
+        int value;
+        do {
+            value = readIntInput();
+            if (value == 0)
+                return 0;
+            if (value != first && value != second) {
+                System.out.println("Wrong input");
+                System.out.print("Enter " + first + " or " + second + ", or 0 to return: ");
+            }
+        } while (value != first && value != second);
+        return value;
+    }
+
+    private String readMenuSelection(String title, String[] labels, String[] values) {
+        if (labels == null || values == null || labels.length == 0 || labels.length != values.length)
+            throw new IllegalArgumentException("Menu labels and values must have the same non-zero length.");
+        System.out.println(title);
+        for (int i = 0; i < labels.length; i++)
+            System.out.println((i + 1) + ". " + labels[i]);
+        System.out.println("0. Return");
+        System.out.print("Enter option number (0-" + labels.length + "): ");
+        int choice = readMenuChoice(0, labels.length);
+        return choice == 0 ? null : values[choice - 1];
+    }
+
+    private String readOptionalDateFilter(String title) {
+        System.out.println(title);
+        System.out.println("1. All dates");
+        System.out.println("2. Enter a specific date");
+        System.out.println("0. Return");
+        System.out.print("Enter option number (0-2): ");
+        int choice = readMenuChoice(0, 2);
+        if (choice == 0)
+            return null;
+        if (choice == 1)
+            return "ALL";
+        return readValidDateOrBack("Enter date (YYYY-MM-DD, or 0 to return): ");
+    }
+
+    private int readMenuChoice(int min, int max) {
         while (true) {
             int value = readIntInput();
-            if (value == first || value == second) return value;
-            System.out.print("Please enter " + first + " or " + second + ": ");
+            if (value >= min && value <= max)
+                return value;
+            System.out.println("Wrong input");
+            System.out.print("Enter a value from " + min + " to " + max + ", or 0 to return: ");
         }
     }
 
-    private String readChoice(String... choices) {
+    private String readRequiredTextOrBack(String prompt) {
         while (true) {
-            String input = scanner.nextLine().trim();
-            for (String choice : choices) {
-                if (choice.equalsIgnoreCase(input)) return choice;
-            }
-            System.out.print("Invalid option. Please enter one of the listed values: ");
+            System.out.print(prompt);
+            String value = scanner.nextLine().trim();
+            if ("0".equals(value))
+                return null;
+            if (!value.isEmpty())
+                return value;
+            System.out.println("Wrong input");
+            System.out.println("Enter again, or enter 0 to return.");
         }
     }
 
-    private String readDateOrAll() {
+    private String readValidDateOrBack(String prompt) {
         while (true) {
-            String input = scanner.nextLine().trim();
-            if ("ALL".equalsIgnoreCase(input)) return "ALL";
-            if (isValidDateInput(input)) return input;
-            System.out.print("Invalid date. Use YYYY-MM-DD or ALL: ");
+            System.out.print(prompt);
+            String value = scanner.nextLine().trim();
+            if ("0".equals(value))
+                return null;
+            if (isValidDateInput(value))
+                return value;
+            System.out.println("Wrong input");
+            System.out.println("Use YYYY-MM-DD, or enter 0 to return.");
         }
+    }
+
+    private String[] readStayPeriodOrBack(String datePrompt) {
+        while (true) {
+            String date = readValidDateOrBack(datePrompt);
+            if (date == null)
+                return null;
+            System.out.print("Enter Number of Nights (1-30, 0 to return): ");
+            int nights = readPositiveIntInput();
+            if (nights == 0)
+                return null;
+            int validation = controller.validateStayPeriod(date, nights);
+            if (validation == 1)
+                return new String[] { date, String.valueOf(nights) };
+            System.out.println("Wrong input");
+            printStayValidationError(validation);
+        }
+    }
+
+    private void pauseForEnter() {
+        System.out.print("\nPress Enter to return to the previous menu...");
+        scanner.nextLine();
     }
 
     private boolean isValidDateInput(String date) {
@@ -672,19 +689,14 @@ public class BookingUI {
     }
 
     private void printStayValidationError(int result) {
-        if (result == -4) {
+        if (result == -4)
             System.out.println("Error: Date must be a real calendar date in YYYY-MM-DD format.");
-        } else if (result == -5) {
+        else if (result == -5)
             System.out.println("Error: Stay duration must be between 1 and 30 nights.");
-        } else if (result == -6) {
+        else if (result == -6)
             System.out.println("Error: Check-in date cannot be earlier than today (" + LocalDate.now() + ").");
-        } else if (result == -7) {
+        else if (result == -7)
             System.out.println("Error: Check-in cannot be more than 365 days from today.");
-        }
     }
 
-    public static void main(String[] args) {
-        BookingUI ui = new BookingUI();
-        ui.displayMenu();
-    }
 }

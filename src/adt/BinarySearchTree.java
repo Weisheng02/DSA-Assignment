@@ -1,5 +1,7 @@
 package adt;
 
+import java.util.function.Function;
+
 /**
  * Author: Weisheng
  * Linked-node Binary Search Tree implementation.
@@ -35,6 +37,10 @@ public class BinarySearchTree<T extends Comparable<T>> implements BSTInterface<T
     @Override
     public boolean add(T newEntry) {
         if (newEntry == null) return false;
+        // This BST is used for unique identifiers (confirmation number, room
+        // number and reward ID). Rejecting duplicate keys also keeps search,
+        // range search and rebalance under one simple, consistent rule.
+        if (contains(newEntry)) return false;
         root = addNode(root, newEntry);
         numberOfEntries++;
         return true;
@@ -48,7 +54,7 @@ public class BinarySearchTree<T extends Comparable<T>> implements BSTInterface<T
         int comp = newEntry.compareTo(currentNode.data);
         if (comp < 0) {
             currentNode.left = addNode(currentNode.left, newEntry);
-        } else {
+        } else if (comp > 0) {
             currentNode.right = addNode(currentNode.right, newEntry);
         }
         return currentNode;
@@ -312,27 +318,116 @@ public class BinarySearchTree<T extends Comparable<T>> implements BSTInterface<T
      */
     @Override
     public void printTree() {
-        if (root == null) {
-            System.out.println(" (Empty Tree)");
-            return;
-        }
-        printTreeHelper(root, "", true);
+        System.out.print(getTreeDisplayText());
     }
 
-    private void printTreeHelper(Node<T> node, String prefix, boolean isTail) {
-        if (node != null) {
-            System.out.println(prefix + (isTail ? "└── " : "├── ") + node.data.toString());
-            String newPrefix = prefix + (isTail ? "    " : "│   ");
-            boolean hasRight = node.right != null;
-            boolean hasLeft = node.left != null;
-            if (hasLeft && hasRight) {
-                printTreeHelper(node.right, newPrefix, false);
-                printTreeHelper(node.left, newPrefix, true);
-            } else if (hasLeft) {
-                printTreeHelper(node.left, newPrefix, true);
-            } else if (hasRight) {
-                printTreeHelper(node.right, newPrefix, true);
-            }
+    @Override
+    public String getTreeDisplayText() {
+        return getTreeDisplayText(String::valueOf);
+    }
+
+    @Override
+    public String getTreeDisplayText(Function<T, String> labelFormatter) {
+        if (root == null) return " (Empty Tree)\n";
+        StringBuilder output = new StringBuilder();
+        Function<T, String> formatter = labelFormatter == null ? String::valueOf : labelFormatter;
+        appendTreeDisplay(root, "", true, output, formatter);
+        return output.toString();
+    }
+
+    private void appendTreeDisplay(Node<T> node, String prefix, boolean isTail, StringBuilder output,
+            Function<T, String> labelFormatter) {
+        if (node == null) return;
+        output.append(prefix).append(isTail ? "└── " : "├── ")
+                .append(labelFormatter.apply(node.data)).append('\n');
+        String newPrefix = prefix + (isTail ? "    " : "│   ");
+        boolean hasRight = node.right != null;
+        boolean hasLeft = node.left != null;
+        if (hasLeft && hasRight) {
+            appendTreeDisplay(node.right, newPrefix, false, output, labelFormatter);
+            appendTreeDisplay(node.left, newPrefix, true, output, labelFormatter);
+        } else if (hasLeft) {
+            appendTreeDisplay(node.left, newPrefix, true, output, labelFormatter);
+        } else if (hasRight) {
+            appendTreeDisplay(node.right, newPrefix, true, output, labelFormatter);
+        }
+    }
+
+    @Override
+    public String getTopDownTreeDisplayText(Function<T, String> labelFormatter) {
+        if (root == null) return " (Empty Tree)\n";
+
+        Function<T, String> formatter = labelFormatter == null ? String::valueOf : labelFormatter;
+        int height = getHeight();
+        // A complete top-down layout doubles in width at each level. Fall back
+        // to the compact side view if a highly unbalanced tree becomes too wide.
+        if (height > 6) {
+            return "(Tree is taller than 6 levels; compact side view shown.)\n"
+                    + getTreeDisplayText(formatter);
+        }
+
+        int maxLabelLength = getMaxLabelLength(root, formatter);
+        int cellWidth = Math.max(3, maxLabelLength + 2);
+        int leafSlots = 1 << (height - 1);
+        int canvasWidth = leafSlots * cellWidth;
+        char[][] canvas = new char[height * 2 - 1][canvasWidth + 1];
+        for (int row = 0; row < canvas.length; row++) {
+            for (int column = 0; column < canvas[row].length; column++)
+                canvas[row][column] = ' ';
+        }
+
+        int rootCentre = canvasWidth / 2;
+        int firstOffset = height == 1 ? 0 : canvasWidth / 4;
+        placeTopDownNode(root, 0, rootCentre, firstOffset, canvas, formatter);
+
+        StringBuilder output = new StringBuilder();
+        for (char[] row : canvas) {
+            int lastCharacter = row.length - 1;
+            while (lastCharacter >= 0 && row[lastCharacter] == ' ')
+                lastCharacter--;
+            if (lastCharacter >= 0)
+                output.append(row, 0, lastCharacter + 1);
+            output.append('\n');
+        }
+        return output.toString();
+    }
+
+    private int getMaxLabelLength(Node<T> node, Function<T, String> formatter) {
+        if (node == null) return 0;
+        String label = formatLabel(node.data, formatter);
+        return Math.max(label.length(),
+                Math.max(getMaxLabelLength(node.left, formatter), getMaxLabelLength(node.right, formatter)));
+    }
+
+    private void placeTopDownNode(Node<T> node, int depth, int centre, int childOffset,
+            char[][] canvas, Function<T, String> formatter) {
+        if (node == null) return;
+
+        String label = formatLabel(node.data, formatter);
+        writeText(canvas[depth * 2], centre - label.length() / 2, label);
+
+        int nextOffset = Math.max(1, childOffset / 2);
+        if (node.left != null) {
+            int childCentre = centre - childOffset;
+            canvas[depth * 2 + 1][(centre + childCentre) / 2] = '/';
+            placeTopDownNode(node.left, depth + 1, childCentre, nextOffset, canvas, formatter);
+        }
+        if (node.right != null) {
+            int childCentre = centre + childOffset;
+            canvas[depth * 2 + 1][(centre + childCentre) / 2] = '\\';
+            placeTopDownNode(node.right, depth + 1, childCentre, nextOffset, canvas, formatter);
+        }
+    }
+
+    private String formatLabel(T data, Function<T, String> formatter) {
+        String label = formatter.apply(data);
+        return label == null ? "null" : label.replace('\n', ' ').replace('\r', ' ');
+    }
+
+    private void writeText(char[] row, int start, String text) {
+        for (int i = 0; i < text.length() && start + i < row.length; i++) {
+            if (start + i >= 0)
+                row[start + i] = text.charAt(i);
         }
     }
 

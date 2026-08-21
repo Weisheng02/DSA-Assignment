@@ -47,6 +47,10 @@ public class MyArrayList<T> implements ListInterface<T> {
 
     @Override
     public void clear() {
+        // Release references immediately instead of retaining removed objects
+        // until the backing array is resized or garbage-collected with the list.
+        for (int i = 0; i < numberOfEntries; i++)
+            array[i] = null;
         numberOfEntries = 0;
     }
 

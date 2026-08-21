@@ -13,9 +13,9 @@ public class RewardItem implements Comparable<RewardItem> {
     private String itemName;
     private int pointsCost;
     private int stockQuantity;
-    private int defaultStockQuantity; 
-    private int totalRedeemed;         
-    private int validityMinutes;      
+    private int defaultStockQuantity;
+    private int totalRedeemed;
+    private int validityMinutes;
 
     public RewardItem(String itemName, int pointsCost, int stockQuantity, int validityMinutes) {
         this.itemId = "RW" + String.format("%03d", idCounter++);
@@ -27,27 +27,48 @@ public class RewardItem implements Comparable<RewardItem> {
         this.validityMinutes = validityMinutes;
     }
 
-    public String getItemId() { return itemId; }
+    public String getItemId() {
+        return itemId;
+    }
 
-    public String getItemName() { return itemName; }
-    public void setItemName(String itemName) { this.itemName = itemName; }
+    public String getItemName() {
+        return itemName;
+    }
 
-    public int getPointsCost() { return pointsCost; }
-    public void setPointsCost(int pointsCost) { this.pointsCost = pointsCost; }
+    public void setItemName(String itemName) {
+        this.itemName = itemName;
+    }
 
-    public int getStockQuantity() { return stockQuantity; }
-    public int getDefaultStockQuantity() { return defaultStockQuantity; }
-    public int getTotalRedeemed() { return totalRedeemed; }
-    public int getValidityMinutes() { return validityMinutes; }
+    public int getPointsCost() {
+        return pointsCost;
+    }
+
+    public void setPointsCost(int pointsCost) {
+        this.pointsCost = pointsCost;
+    }
+
+    public int getStockQuantity() {
+        return stockQuantity;
+    }
+
+    public int getDefaultStockQuantity() {
+        return defaultStockQuantity;
+    }
+
+    public int getTotalRedeemed() {
+        return totalRedeemed;
+    }
+
+    public int getValidityMinutes() {
+        return validityMinutes;
+    }
 
     public boolean hasStock() {
         return stockQuantity > 0;
     }
 
-    public void recordRedeemed() {
-        if (stockQuantity > 0) {
-            stockQuantity--;
-        }
+    /** Records one request that has completed FIFO settlement. */
+    public void recordRedemptionCompleted() {
         totalRedeemed++;
     }
 
@@ -60,7 +81,7 @@ public class RewardItem implements Comparable<RewardItem> {
     public void resetStockToDefault() {
         this.stockQuantity = this.defaultStockQuantity;
     }
-    
+
     public void setStockQuantity(int stockQuantity) {
         this.stockQuantity = stockQuantity;
     }
@@ -70,9 +91,4 @@ public class RewardItem implements Comparable<RewardItem> {
         return this.itemId.compareTo(other.itemId);
     }
 
-    @Override
-    public String toString() {
-        return String.format("%-30s | Cost: %4d pts | Stock: %3d | Valid: %3d Mins", 
-                itemName, pointsCost, stockQuantity, validityMinutes);
-    }
 }

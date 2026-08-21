@@ -13,8 +13,7 @@ import java.time.format.DateTimeFormatter;
 public class HousekeepingLog {
 
     private static int idCounter = 1;
-    private static final DateTimeFormatter FORMATTER =
-            DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+    private static final DateTimeFormatter FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     private int taskId;
     private String roomNumber;
@@ -32,24 +31,28 @@ public class HousekeepingLog {
         this.timestamp = LocalDateTime.now().format(FORMATTER);
     }
 
-    public int getTaskId() { return taskId; }
-
-    public String getRoomNumber() { return roomNumber; }
-
-    public String getPreviousStatus() { return previousStatus; }
-
-    public String getNewStatus() { return newStatus; }
-
-    public String getStaffName() { return staffName; }
-
-    public String getTimestamp() { return timestamp; }
-
-    @Override
-    public String toString() {
-        return "Task#" + taskId +
-                " | Room " + roomNumber +
-                " | " + previousStatus + " -> " + newStatus +
-                " | By: " + staffName +
-                " | " + timestamp;
+    public int getTaskId() {
+        return taskId;
     }
+
+    public String getRoomNumber() {
+        return roomNumber;
+    }
+
+    public String getPreviousStatus() {
+        return previousStatus;
+    }
+
+    public String getNewStatus() {
+        return newStatus;
+    }
+
+    public String getStaffName() {
+        return staffName;
+    }
+
+    public String getTimestamp() {
+        return timestamp;
+    }
+
 }

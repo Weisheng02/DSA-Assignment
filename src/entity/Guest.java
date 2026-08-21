@@ -11,31 +11,31 @@ public class Guest implements Comparable<Guest> {
 
     // === Guest Person Identity (Permanent) ===
     private String guestName;
-    private String icNo;            // IC / Passport Number (Person Identity Key)
+    private String icNo; // IC / Passport Number (Person Identity Key)
     private String phoneNumber;
-    private String gender;          // Male / Female / Other
-    private String nationality;     // Malaysian / Foreigner / etc.
-    private String email;           // Guest Email Address
+    private String gender; // Male / Female / Other
+    private String nationality; // Malaysian / Foreigner / etc.
+    private String email; // Guest Email Address
 
     // === Stay / Booking Reference (BST Key) ===
-    private String confirmationNumber;  // 8-digit unique Stay/Reservation Key (BST Search Key)
-    private String bookingStatus;       // Registered, Waiting, Reserved, CheckedIn, CheckedOut, Cancelled, NoShow
+    private String confirmationNumber; // 8-digit unique Stay/Reservation Key (BST Search Key)
+    private String bookingStatus; // Registered, Waiting, Reserved, CheckedIn, CheckedOut, Cancelled, NoShow
     private String checkInDate;
     private String checkOutDate;
     private int numberOfNights;
 
     // === Room Assignment ===
     private String assignedRoomNumber;
-    private String roomType;            // Deluxe Suite, Presidential Suite, Standard Room
-    private double roomRate;            // Nightly rate charged
+    private String roomType; // Deluxe Suite, Presidential Suite, Standard Room
+    private double roomRate; // Nightly rate charged
 
     // === Loyalty (shared with Loyalty module) ===
-    private String loyaltyTier;         // Platinum, Gold, Silver, Standard
+    private String loyaltyTier; // Platinum, Gold, Silver, Standard
     private int loyaltyPoints;
-    private int loyaltyExperience;      // Lifetime tier progress; redemption does not reduce it
+    private int loyaltyExperience; // Lifetime tier progress; redemption does not reduce it
 
     // === Guest Preferences ===
-    private String specialRequest;      // e.g., "Extra pillows", "High floor"
+    private String specialRequest; // e.g., "Extra pillows", "High floor"
 
     // --- Default Constructor ---
     public Guest() {
@@ -53,14 +53,14 @@ public class Guest implements Comparable<Guest> {
 
     // --- Complete Constructor ---
     public Guest(String guestName, String icNo, String phoneNumber,
-                 String confirmationNumber, String loyaltyTier, int loyaltyPoints) {
+            String confirmationNumber, String loyaltyTier, int loyaltyPoints) {
         this(guestName, icNo, phoneNumber, "N/A", "Malaysian", "N/A", confirmationNumber, loyaltyTier, loyaltyPoints);
     }
 
     // --- All-Fields Demographic Constructor ---
     public Guest(String guestName, String icNo, String phoneNumber, String gender,
-                 String nationality, String email, String confirmationNumber,
-                 String loyaltyTier, int loyaltyPoints) {
+            String nationality, String email, String confirmationNumber,
+            String loyaltyTier, int loyaltyPoints) {
         this.guestName = guestName;
         this.icNo = (icNo != null && !icNo.trim().isEmpty()) ? icNo.trim() : "N/A";
         this.phoneNumber = (phoneNumber != null && !phoneNumber.trim().isEmpty()) ? phoneNumber.trim() : "N/A";
@@ -87,31 +87,68 @@ public class Guest implements Comparable<Guest> {
     // ========== Getters & Setters ==========
 
     // --- Identity ---
-    public String getGuestName() { return guestName; }
-    public void setGuestName(String guestName) { this.guestName = guestName; }
+    public String getGuestName() {
+        return guestName;
+    }
 
-    public String getIcNo() { return icNo; }
-    public void setIcNo(String icNo) { this.icNo = icNo; }
+    public void setGuestName(String guestName) {
+        this.guestName = guestName;
+    }
 
-    public String getPhoneNumber() { return phoneNumber; }
-    public void setPhoneNumber(String phoneNumber) { this.phoneNumber = phoneNumber; }
+    public String getIcNo() {
+        return icNo;
+    }
 
-    public String getGender() { return gender; }
-    public void setGender(String gender) { this.gender = gender; }
+    public void setIcNo(String icNo) {
+        this.icNo = icNo;
+    }
 
-    public String getNationality() { return nationality; }
-    public void setNationality(String nationality) { this.nationality = nationality; }
+    public String getPhoneNumber() {
+        return phoneNumber;
+    }
 
-    public String getEmail() { return email; }
-    public void setEmail(String email) { this.email = email; }
+    public void setPhoneNumber(String phoneNumber) {
+        this.phoneNumber = phoneNumber;
+    }
+
+    public String getGender() {
+        return gender;
+    }
+
+    public void setGender(String gender) {
+        this.gender = gender;
+    }
+
+    public String getNationality() {
+        return nationality;
+    }
+
+    public void setNationality(String nationality) {
+        this.nationality = nationality;
+    }
+
+    public String getEmail() {
+        return email;
+    }
+
+    public void setEmail(String email) {
+        this.email = email;
+    }
 
     // --- BST Key (immutable after creation) ---
-    public String getConfirmationNumber() { return confirmationNumber; }
+    public String getConfirmationNumber() {
+        return confirmationNumber;
+    }
     // No setter — confirmation number should not change after creation
 
     // --- Stay Status ---
-    public String getBookingStatus() { return bookingStatus; }
-    public void setBookingStatus(String bookingStatus) { this.bookingStatus = bookingStatus; }
+    public String getBookingStatus() {
+        return bookingStatus;
+    }
+
+    public void setBookingStatus(String bookingStatus) {
+        this.bookingStatus = bookingStatus;
+    }
 
     /**
      * Convenience method: checks if bookingStatus equals "CheckedIn".
@@ -145,50 +182,106 @@ public class Guest implements Comparable<Guest> {
         this.bookingStatus = checkedIn ? "CheckedIn" : "Reserved";
     }
 
-    public String getCheckInDate() { return checkInDate; }
-    public void setCheckInDate(String checkInDate) { this.checkInDate = checkInDate; }
+    public String getCheckInDate() {
+        return checkInDate;
+    }
 
-    public String getCheckOutDate() { return checkOutDate; }
-    public void setCheckOutDate(String checkOutDate) { this.checkOutDate = checkOutDate; }
+    public void setCheckInDate(String checkInDate) {
+        this.checkInDate = checkInDate;
+    }
 
-    public int getNumberOfNights() { return numberOfNights; }
-    public void setNumberOfNights(int numberOfNights) { this.numberOfNights = numberOfNights; }
+    public String getCheckOutDate() {
+        return checkOutDate;
+    }
+
+    public void setCheckOutDate(String checkOutDate) {
+        this.checkOutDate = checkOutDate;
+    }
+
+    public int getNumberOfNights() {
+        return numberOfNights;
+    }
+
+    public void setNumberOfNights(int numberOfNights) {
+        this.numberOfNights = numberOfNights;
+    }
 
     // --- Room ---
-    public String getAssignedRoomNumber() { return assignedRoomNumber; }
-    public void setAssignedRoomNumber(String assignedRoomNumber) { this.assignedRoomNumber = assignedRoomNumber; }
+    public String getAssignedRoomNumber() {
+        return assignedRoomNumber;
+    }
 
-    public String getRoomType() { return roomType; }
-    public void setRoomType(String roomType) { this.roomType = roomType; }
+    public void setAssignedRoomNumber(String assignedRoomNumber) {
+        this.assignedRoomNumber = assignedRoomNumber;
+    }
 
-    public double getRoomRate() { return roomRate; }
-    public void setRoomRate(double roomRate) { this.roomRate = roomRate; }
+    public String getRoomType() {
+        return roomType;
+    }
+
+    public void setRoomType(String roomType) {
+        this.roomType = roomType;
+    }
+
+    public double getRoomRate() {
+        return roomRate;
+    }
+
+    public void setRoomRate(double roomRate) {
+        this.roomRate = roomRate;
+    }
 
     // Backward compatibility aliases for effectiveRoomRate
-    public double getEffectiveRoomRate() { return roomRate; }
-    public void setEffectiveRoomRate(double effectiveRoomRate) { this.roomRate = effectiveRoomRate; }
+    public double getEffectiveRoomRate() {
+        return roomRate;
+    }
+
+    public void setEffectiveRoomRate(double effectiveRoomRate) {
+        this.roomRate = effectiveRoomRate;
+    }
 
     // --- Loyalty ---
-    public String getLoyaltyTier() { return loyaltyTier; }
-    public void setLoyaltyTier(String loyaltyTier) { this.loyaltyTier = loyaltyTier; }
+    public String getLoyaltyTier() {
+        return loyaltyTier;
+    }
 
-    public int getLoyaltyPoints() { return loyaltyPoints; }
-    public void setLoyaltyPoints(int loyaltyPoints) { this.loyaltyPoints = loyaltyPoints; }
+    public void setLoyaltyTier(String loyaltyTier) {
+        this.loyaltyTier = loyaltyTier;
+    }
 
-    public int getLoyaltyExperience() { return loyaltyExperience; }
+    public int getLoyaltyPoints() {
+        return loyaltyPoints;
+    }
+
+    public void setLoyaltyPoints(int loyaltyPoints) {
+        this.loyaltyPoints = loyaltyPoints;
+    }
+
+    public int getLoyaltyExperience() {
+        return loyaltyExperience;
+    }
+
     public void setLoyaltyExperience(int loyaltyExperience) {
         this.loyaltyExperience = Math.max(0, loyaltyExperience);
     }
 
     // Compatibility aliases used by the supplied LoyaltyController.
-    public int getLoyaltyExperiences() { return getLoyaltyExperience(); }
+    public int getLoyaltyExperiences() {
+        return getLoyaltyExperience();
+    }
+
     public void setLoyaltyExperiences(int loyaltyExperience) {
         setLoyaltyExperience(loyaltyExperience);
     }
 
     // --- Preferences ---
-    public String getSpecialRequest() { return specialRequest; }
-    public void setSpecialRequest(String specialRequest) { this.specialRequest = specialRequest; }
+    public String getSpecialRequest() {
+        return specialRequest;
+    }
+
+    public void setSpecialRequest(String specialRequest) {
+        this.specialRequest = specialRequest;
+    }
 
     // ========== Computed Methods ==========
 
@@ -204,15 +297,19 @@ public class Guest implements Comparable<Guest> {
 
     @Override
     public int compareTo(Guest other) {
-        if (other == null || other.confirmationNumber == null) return 1;
-        if (this.confirmationNumber == null) return -1;
+        if (other == null || other.confirmationNumber == null)
+            return 1;
+        if (this.confirmationNumber == null)
+            return -1;
         return this.confirmationNumber.compareToIgnoreCase(other.confirmationNumber);
     }
 
     @Override
     public boolean equals(Object obj) {
-        if (this == obj) return true;
-        if (obj == null || getClass() != obj.getClass()) return false;
+        if (this == obj)
+            return true;
+        if (obj == null || getClass() != obj.getClass())
+            return false;
         Guest other = (Guest) obj;
         return confirmationNumber != null && confirmationNumber.equalsIgnoreCase(other.confirmationNumber);
     }

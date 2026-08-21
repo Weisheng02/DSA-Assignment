@@ -8,9 +8,14 @@ import java.util.Comparator;
  */
 public interface ListInterface<T> {
     boolean add(T newEntry);
+
     T get(int index);
+
     int getNumberOfEntries();
+
     boolean isEmpty();
+
     void clear();
+
     void sort(Comparator<T> comparator);
 }

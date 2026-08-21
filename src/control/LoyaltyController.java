@@ -4,11 +4,15 @@ import adt.BSTInterface;
 import adt.BinarySearchTree;
 import adt.ListInterface;
 import adt.MyArrayList;
+import adt.QueueInterface;
+import adt.ArrayQueue;
 import entity.Booking;
 import entity.Guest;
 import entity.LoyaltyTransaction;
+import entity.PointBatch;
 import entity.RewardItem;
 import java.time.Duration;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 
@@ -17,40 +21,129 @@ import java.time.format.DateTimeFormatter;
  * Loyalty & Rewards module business logic controller.
  */
 public class LoyaltyController {
-    private static final int POINT_VALIDITY_MINUTES = 1;
+    private static final int POINT_VALIDITY_MINUTES = 365 * 24 * 60;
+    private static final int NON_EXPIRING_POINTS = -1;
+    private static final int OPENING_BALANCE_VALIDITY_MINUTES = POINT_VALIDITY_MINUTES;
+    // Reward costs start at 20 points and tier thresholds are 200/500/1200 EXP.
+    // Fifty points is meaningful without allowing one daily claim to skip tiers.
+    public static final int DAILY_CHECK_IN_POINTS = 50;
     private static final DateTimeFormatter BATCH_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
-    private static ListInterface<String> pointHistory = new MyArrayList<>();
-    private static ListInterface<LoyaltyTransaction> redemptionHistory = new MyArrayList<>();
-    private static ListInterface<String> dailyClaimedGuests = new MyArrayList<>();
+    // Source-of-truth loyalty ledger supplied by the Loyalty module owner.
+    private ListInterface<String> pointHistory = new MyArrayList<>();
+    private ListInterface<PointBatch> pointBatches = new MyArrayList<>();
+    private ListInterface<LoyaltyTransaction> redemptionHistory = new MyArrayList<>();
+    private ListInterface<String> dailyClaimRecords = new MyArrayList<>();
+    private QueueInterface<PendingItemRequest> pendingItemQueue = new ArrayQueue<>();
     private BSTInterface<RewardItem> rewardCatalog = new BinarySearchTree<>();
     private BSTInterface<Guest> masterGuestTree;
+
+    /** One reward request held in the FIFO settlement queue. */
+    public static class PendingItemRequest {
+        private final Guest guest;
+        private final RewardItem item;
+        private final int effectiveCost;
+
+        public PendingItemRequest(Guest guest, RewardItem item, int effectiveCost) {
+            this.guest = guest;
+            this.item = item;
+            this.effectiveCost = effectiveCost;
+        }
+
+        public Guest getGuest() {
+            return guest;
+        }
+
+        public RewardItem getItem() {
+            return item;
+        }
+
+        public int getEffectiveCost() {
+            return effectiveCost;
+        }
+    }
 
     /** Minimal result type required by the existing Front Desk checkout hook. */
     public static class AwardResult {
         private final boolean success;
         private final int pointsAwarded;
+
         public AwardResult(boolean success, int pointsAwarded) {
             this.success = success;
             this.pointsAwarded = pointsAwarded;
         }
-        public boolean isSuccess() { return success; }
-        public int getPointsAwarded() { return pointsAwarded; }
-    }
 
-    public LoyaltyController() {
-        initializeDefaultRewards();
+        public boolean isSuccess() {
+            return success;
+        }
+
+        public int getPointsAwarded() {
+            return pointsAwarded;
+        }
     }
 
     /** Keeps the supplied Loyalty module connected to the shared Guest BST. */
     public LoyaltyController(BSTInterface<Guest> masterGuestTree) {
-        this();
+        initializeDefaultRewards();
         this.masterGuestTree = masterGuestTree;
+        initializeOpeningPointBatches();
+    }
+
+    /**
+     * Converts seeded member balances into one traceable batch per person.
+     * Repeat-stay Guest profiles share an IC/passport and must not duplicate the
+     * same opening points.
+     */
+    private void initializeOpeningPointBatches() {
+        if (masterGuestTree == null)
+            return;
+        ListInterface<String> initializedMembers = new MyArrayList<>();
+        ListInterface<Guest> guests = masterGuestTree.inOrderTraversal();
+        for (int i = 0; i < guests.getNumberOfEntries(); i++) {
+            Guest guest = guests.get(i);
+            String key = memberKey(guest);
+            if (guest.getLoyaltyPoints() <= 0 || containsText(initializedMembers, key))
+                continue;
+            initializedMembers.add(key);
+            PointBatch batch = new PointBatch(guest.getLoyaltyPoints(), "Opening Balance",
+                    guest.getConfirmationNumber(), key, OPENING_BALANCE_VALIDITY_MINUTES);
+            pointBatches.add(batch);
+            pointHistory.add(String.format("%d|%s|%s|%s|Conf: %s|ACTIVE|%s",
+                    batch.getPoints(), batch.getEarnedTime().format(BATCH_FMT),
+                    batch.getExpiryTime().format(BATCH_FMT), batch.getDescription(),
+                    batch.getConfirmationNumber(), batch.getBatchId()));
+        }
+    }
+
+    private boolean containsText(ListInterface<String> values, String target) {
+        for (int i = 0; i < values.getNumberOfEntries(); i++)
+            if (values.get(i).equals(target))
+                return true;
+        return false;
     }
 
     private Guest findGuest(String confirmationNumber) {
-        if (masterGuestTree == null || confirmationNumber == null) return null;
-        return masterGuestTree.search(new Guest("", confirmationNumber, "", 0));
+        return ControllerDataSupport.findGuestByConfirmation(masterGuestTree, confirmationNumber);
+    }
+
+    /**
+     * Finds a guest for the Loyalty boundary without exposing the Guest BST.
+     * The tree remains an implementation detail of this Control class.
+     */
+    public Guest findGuestByConfirmationNumber(String confirmationNumber) {
+        return findGuest(confirmationNumber);
+    }
+
+    // Simple operation results used by the console Boundary.
+    public static final int RESULT_SUCCESS = 1;
+    public static final int RESULT_ALREADY_CLAIMED = 0;
+    public static final int RESULT_NOT_FOUND = -1;
+    public static final int RESULT_INVALID_SELECTION = -2;
+    public static final int RESULT_INSUFFICIENT_POINTS = -3;
+    public static final int RESULT_OUT_OF_STOCK = -4;
+
+    public boolean memberExists(String confirmationNumber) {
+        return findGuest(confirmationNumber) != null;
     }
 
     /** Compatibility validation for the existing Front Desk checkout flow. */
@@ -59,258 +152,552 @@ public class LoyaltyController {
         return new AwardResult(findGuest(confirmationNumber) != null && points >= 0, 0);
     }
 
-    /** Sends a successful Front Desk checkout into the supplied point-history flow. */
+    /**
+     * Sends a successful Front Desk checkout into the supplied point-history flow.
+     */
     public AwardResult awardCheckoutPoints(String confirmationNumber,
             String sourceReference, int points) {
         Guest guest = findGuest(confirmationNumber);
-        if (guest == null || points < 0) return new AwardResult(false, 0);
-        recordPointTransaction(guest, "Checkout Reward (" + sourceReference + ")", points);
+        if (guest == null || points < 0)
+            return new AwardResult(false, 0);
+        recordPointTransaction(guest, "Checkout Reward (" + sourceReference + ")", points,
+                NON_EXPIRING_POINTS);
         return new AwardResult(true, points);
     }
 
-    /** Existing transactions are tied to confirmation number, so no migration is needed. */
+    /** Migrates the identity shared by all stay profiles and loyalty batches. */
     public boolean migrateMemberIdentity(Guest guest, String newIcNo) {
-        return guest != null && newIcNo != null && !newIcNo.trim().isEmpty();
-    }
+        if (guest == null || newIcNo == null || newIcNo.trim().isEmpty())
+            return false;
+        String oldKey = memberKey(guest);
+        String newIdentity = newIcNo.trim();
+        String normalizedNewIdentity = ControllerDataSupport.normalizeIdentity(newIdentity);
+        String newKey = (!normalizedNewIdentity.isEmpty() && !"na".equals(normalizedNewIdentity))
+                ? "id:" + normalizedNewIdentity
+                : "conf:" + guest.getConfirmationNumber().trim().toLowerCase();
 
-    public boolean isValidMenuChoice(String choice, int min, int max) {
-        if ("0".equals(choice)) return true;
-        try { int n = Integer.parseInt(choice); return n >= min && n <= max; }
-        catch (NumberFormatException e) { return false; }
+        if (masterGuestTree != null) {
+            ListInterface<Guest> profiles = masterGuestTree.inOrderTraversal();
+            for (int i = 0; i < profiles.getNumberOfEntries(); i++) {
+                Guest profile = profiles.get(i);
+                if (oldKey.equals(memberKey(profile)))
+                    profile.setIcNo(newIdentity);
+            }
+        }
+        for (int i = 0; i < pointBatches.getNumberOfEntries(); i++) {
+            PointBatch batch = pointBatches.get(i);
+            if (oldKey.equals(batch.getMemberKey()))
+                batch.setMemberKey(newKey);
+        }
+        ListInterface<String> migratedClaims = new MyArrayList<>();
+        for (int i = 0; i < dailyClaimRecords.getNumberOfEntries(); i++) {
+            String record = dailyClaimRecords.get(i);
+            migratedClaims.add(record.startsWith(oldKey + "|")
+                    ? newKey + record.substring(oldKey.length()) : record);
+        }
+        dailyClaimRecords = migratedClaims;
+        return true;
     }
 
     private String calculateTier(int exp) {
-        if (exp >= 1200) return "Platinum";
-        if (exp >= 500) return "Gold";
-        if (exp >= 200) return "Silver";
+        if (exp >= 1200)
+            return "Platinum";
+        if (exp >= 500)
+            return "Gold";
+        if (exp >= 200)
+            return "Silver";
         return "Standard";
     }
 
-    public String getNextTierInfo(Guest guest) {
-        int exp = guest.getLoyaltyExperiences();
-        String tier = calculateTier(exp);
-        guest.setLoyaltyTier(tier);
-        return switch (tier) {
-            case "Standard" -> exp + " / 200 EXP (Silver) | Need: " + Math.max(0, 200 - exp) + " EXP";
-            case "Silver" -> exp + " / 500 EXP (Gold) | Need: " + Math.max(0, 500 - exp) + " EXP";
-            case "Gold" -> exp + " / 1,200 EXP (Platinum) | Need: " + Math.max(0, 1200 - exp) + " EXP";
-            default -> exp + " EXP (Max Tier Reached)";
-        };
+    /** Returns the tier earned by the member's lifetime EXP without changing state. */
+    public String getCalculatedTier(Guest guest) {
+        return guest == null ? "Standard" : calculateTier(guest.getLoyaltyExperiences());
     }
 
-    public void refreshPoints(Guest guest) { checkExpiredPoints(guest); }
+    /** Applies the calculated tier and synchronizes every stay profile for the member. */
+    public void updateMemberTier(Guest guest) {
+        if (guest == null)
+            return;
+        guest.setLoyaltyTier(calculateTier(guest.getLoyaltyExperiences()));
+        synchronizeMemberProfiles(guest);
+    }
 
-    public void recordPointTransaction(Guest guest, String desc, int pts) {
+    /** Returns the next EXP threshold, or -1 when Platinum is already reached. */
+    public int getNextTierThreshold(Guest guest) {
+        String tier = getCalculatedTier(guest);
+        if ("Standard".equals(tier))
+            return 200;
+        if ("Silver".equals(tier))
+            return 500;
+        if ("Gold".equals(tier))
+            return 1200;
+        return -1;
+    }
+
+    public void refreshPoints(Guest guest) {
         checkExpiredPoints(guest);
-        guest.setLoyaltyPoints(guest.getLoyaltyPoints() + pts);
-        if (pts > 0) guest.setLoyaltyExperiences(guest.getLoyaltyExperiences() + pts);
-        
-        LocalDateTime now = LocalDateTime.now();
-        pointHistory.add(String.format("%d|%s|%s|%s|Conf: %s|%s", pts, now.format(BATCH_FMT), 
-                now.plusMinutes(POINT_VALIDITY_MINUTES).format(BATCH_FMT), desc, guest.getConfirmationNumber(), pts > 0 ? "ACTIVE" : "DEDUCTION"));
     }
 
-    private void checkExpiredPoints(Guest guest) {
-        if (guest == null || guest.getConfirmationNumber() == null) return;
-        LocalDateTime now = LocalDateTime.now();
-        String conf = "Conf: " + guest.getConfirmationNumber();
-        ListInterface<String> updated = new MyArrayList<>();
+    private String memberKey(Guest guest) {
+        if (guest == null)
+            return "";
+        String identity = ControllerDataSupport.normalizeIdentity(guest.getIcNo());
+        if (!identity.isEmpty() && !"na".equals(identity))
+            return "id:" + identity;
+        String confirmation = guest.getConfirmationNumber() == null ? ""
+                : guest.getConfirmationNumber().trim().toLowerCase();
+        return "conf:" + confirmation;
+    }
 
-        for (int i = 0; i < pointHistory.getNumberOfEntries(); i++) {
-            String rec = pointHistory.get(i);
-            String[] p = rec.split("\\|");
-            if (p.length >= 6 && "ACTIVE".equalsIgnoreCase(p[5]) && p[4].trim().equals(conf) && !"-".equals(p[2])) {
-                try {
-                    if (now.isAfter(LocalDateTime.parse(p[2], BATCH_FMT))) {
-                        int pts = Integer.parseInt(p[0]);
-                        guest.setLoyaltyPoints(Math.max(0, guest.getLoyaltyPoints() - pts));
-                        updated.add(String.format("%s|%s|%s|%s|%s|EXPIRED", p[0], p[1], p[2], p[3], p[4]));
-                        updated.add(String.format("-%d|%s|%s|%s (Expired)|%s|DEDUCTION", pts, p[1], p[2], p[3], p[4]));
-                        continue;
-                    }
-                } catch (Exception ignored) {}
+    private boolean sameMember(Guest first, Guest second) {
+        if (first == null || second == null)
+            return false;
+        return memberKey(first).equals(memberKey(second));
+    }
+
+    private boolean confirmationBelongsToMember(Guest member, String confirmationNumber) {
+        Guest transactionOwner = findGuest(confirmationNumber);
+        return transactionOwner != null && sameMember(member, transactionOwner);
+    }
+
+    /** Keeps every stay profile belonging to one IC/passport on one loyalty balance. */
+    private void synchronizeMemberProfiles(Guest source) {
+        if (source == null || masterGuestTree == null)
+            return;
+        ListInterface<Guest> profiles = masterGuestTree.inOrderTraversal();
+        for (int i = 0; i < profiles.getNumberOfEntries(); i++) {
+            Guest profile = profiles.get(i);
+            if (sameMember(source, profile)) {
+                profile.setLoyaltyPoints(source.getLoyaltyPoints());
+                profile.setLoyaltyExperience(source.getLoyaltyExperience());
+                profile.setLoyaltyTier(source.getLoyaltyTier());
             }
-            updated.add(rec);
+        }
+    }
+
+    /** Uses the oldest active earned batches first so spent points cannot expire twice. */
+    private void consumePointBatches(Guest guest, int pointsToConsume) {
+        int remaining = pointsToConsume;
+        String key = memberKey(guest);
+        for (int i = 0; i < pointBatches.getNumberOfEntries() && remaining > 0; i++) {
+            PointBatch batch = pointBatches.get(i);
+            if (!key.equals(batch.getMemberKey()))
+                continue;
+            int consumed = batch.consume(remaining);
+            remaining -= consumed;
+            if (consumed > 0 && "CONSUMED".equalsIgnoreCase(batch.getStatus()))
+                updatePointHistoryBatchStatus(batch.getBatchId(), "CONSUMED");
+        }
+    }
+
+    private void updatePointHistoryBatchStatus(String batchId, String status) {
+        ListInterface<String> updated = new MyArrayList<>();
+        for (int i = 0; i < pointHistory.getNumberOfEntries(); i++) {
+            String record = pointHistory.get(i);
+            String[] fields = record.split("\\|");
+            if (fields.length >= 7 && fields[6].equals(batchId)) {
+                record = String.format("%s|%s|%s|%s|%s|%s|%s",
+                        fields[0], fields[1], fields[2], fields[3], fields[4], status, fields[6]);
+            }
+            updated.add(record);
         }
         pointHistory = updated;
     }
 
-    public void processRoomBooking(Guest guest, Booking booking, boolean isCancel) {
-        int pts = "Presidential Suite".equals(booking.getRoomType()) ? 30 : ("Deluxe Suite".equals(booking.getRoomType()) ? 20 : 10);
-        recordPointTransaction(guest, (isCancel ? "Cancelled " : "") + booking.getRoomType() + " (" + booking.getBookingId() + ")", isCancel ? -pts : pts);
+    public void recordPointTransaction(Guest guest, String desc, int pts) {
+        recordPointTransaction(guest, desc, pts, POINT_VALIDITY_MINUTES);
     }
 
-    public String performDailyCheckIn(Guest guest) {
-        String id = guest.getConfirmationNumber();
-        for (int i = 0; i < dailyClaimedGuests.getNumberOfEntries(); i++)
-            if (dailyClaimedGuests.get(i).equals(id)) return "WARNING: You have already claimed today.";
-        dailyClaimedGuests.add(id);
-        recordPointTransaction(guest, "Daily Check-In", 700);
-        return "SUCCESS: Daily Check-In complete! +700 Points & EXP.";
-    }
-
-    public String getFormattedTransactionHistory(Guest guest) {
+    private void recordPointTransaction(Guest guest, String desc, int pts, int validityMinutes) {
+        if (guest == null)
+            return;
         checkExpiredPoints(guest);
-        StringBuilder sb = new StringBuilder();
-        int count = 0, len = pointHistory.getNumberOfEntries();
-        String conf = "Conf: " + guest.getConfirmationNumber();
+        int actualPoints = pts < 0 ? -Math.min(guest.getLoyaltyPoints(), -pts) : pts;
+        if (actualPoints < 0)
+            consumePointBatches(guest, -actualPoints);
 
-        for (int i = len - 1; i >= 0; i--) {
-            String[] p = pointHistory.get(i).split("\\|");
-            if (p.length >= 6 && p[4].trim().equals(conf)) {
-                int pts = Integer.parseInt(p[0]);
-                sb.append(String.format(" %-3d. %-13s | %-40s | %-8s: %s | Expires: %s\n",
-                        ++count, (pts >= 0 ? "+" : "-") + Math.abs(pts) + " Points", p[3], 
-                        "EXPIRED".equals(p[5]) ? "Earned" : "Date", p[1], p[2]));
+        guest.setLoyaltyPoints(Math.max(0, guest.getLoyaltyPoints() + actualPoints));
+        if (actualPoints > 0)
+            guest.setLoyaltyExperiences(guest.getLoyaltyExperiences() + actualPoints);
+
+        LocalDateTime now = LocalDateTime.now();
+        if (actualPoints > 0) {
+            PointBatch batch = new PointBatch(actualPoints, desc, guest.getConfirmationNumber(),
+                    memberKey(guest), validityMinutes);
+            pointBatches.add(batch);
+            String expiryText = batch.getExpiryTime() == null
+                    ? "N/A" : batch.getExpiryTime().format(BATCH_FMT);
+            pointHistory.add(String.format("%d|%s|%s|%s|Conf: %s|ACTIVE|%s",
+                    actualPoints, batch.getEarnedTime().format(BATCH_FMT),
+                    expiryText, desc,
+                    guest.getConfirmationNumber(), batch.getBatchId()));
+        } else {
+            pointHistory.add(String.format("%d|%s|-|%s|Conf: %s|DEDUCTION|-",
+                    actualPoints, now.format(BATCH_FMT), desc, guest.getConfirmationNumber()));
+        }
+        synchronizeMemberProfiles(guest);
+    }
+
+    private void checkExpiredPoints(Guest guest) {
+        if (guest == null || guest.getConfirmationNumber() == null)
+            return;
+        LocalDateTime now = LocalDateTime.now();
+        String key = memberKey(guest);
+        int expiredTotal = 0;
+        for (int i = 0; i < pointBatches.getNumberOfEntries(); i++) {
+            PointBatch batch = pointBatches.get(i);
+            if (!key.equals(batch.getMemberKey()))
+                continue;
+            int expired = batch.expire(now);
+            if (expired > 0) {
+                expiredTotal += expired;
+                updatePointHistoryBatchStatus(batch.getBatchId(), "EXPIRED");
+                pointHistory.add(String.format("-%d|%s|-|%s (Expired unused balance)|Conf: %s|DEDUCTION|-",
+                        expired, now.format(BATCH_FMT), batch.getDescription(), batch.getConfirmationNumber()));
             }
         }
-        return count == 0 ? "No point transactions yet." : sb.toString();
+        if (expiredTotal > 0) {
+            guest.setLoyaltyPoints(Math.max(0, guest.getLoyaltyPoints() - expiredTotal));
+            synchronizeMemberProfiles(guest);
+        }
     }
 
-    public void initializeDefaultRewards() {
+    public void processRoomBooking(Guest guest, Booking booking, boolean isCancel) {
+        if (guest == null || booking == null)
+            return;
+        int pts = "Presidential Suite".equals(booking.getRoomType()) ? 30
+                : ("Deluxe Suite".equals(booking.getRoomType()) ? 20 : 10);
+        recordPointTransaction(guest,
+                (isCancel ? "Cancelled " : "") + booking.getRoomType() + " (" + booking.getBookingId() + ")",
+                isCancel ? -pts : pts);
+    }
+
+    private int claimDailyCheckIn(Guest guest) {
+        if (guest == null)
+            return RESULT_NOT_FOUND;
+        String claimKey = memberKey(guest) + "|" + LocalDate.now();
+        for (int i = 0; i < dailyClaimRecords.getNumberOfEntries(); i++)
+            if (dailyClaimRecords.get(i).equals(claimKey))
+                return RESULT_ALREADY_CLAIMED;
+        dailyClaimRecords.add(claimKey);
+        recordPointTransaction(guest, "Daily Check-In", DAILY_CHECK_IN_POINTS);
+        return RESULT_SUCCESS;
+    }
+
+    public int claimDailyCheckIn(String confirmationNumber) {
+        return claimDailyCheckIn(findGuest(confirmationNumber));
+    }
+
+    /** Returns newest-first raw point-ledger records for one loyalty member. */
+    public String[] getMemberPointHistoryRecords(String confirmationNumber) {
+        Guest guest = findGuest(confirmationNumber);
+        if (guest == null)
+            return new String[0];
+        checkExpiredPoints(guest);
+        ListInterface<String> records = new MyArrayList<>();
+        int len = pointHistory.getNumberOfEntries();
+        for (int i = len - 1; i >= 0; i--) {
+            String[] point = pointHistory.get(i).split("\\|");
+            String confirmation = point.length >= 5 ? point[4].replace("Conf: ", "").trim() : "";
+            if (point.length >= 6 && confirmationBelongsToMember(guest, confirmation))
+                records.add(pointHistory.get(i));
+        }
+        String[] result = new String[records.getNumberOfEntries()];
+        for (int i = 0; i < result.length; i++)
+            result[i] = records.get(i);
+        return result;
+    }
+
+    private void initializeDefaultRewards() {
         rewardCatalog.add(new RewardItem("Free Coffee Drink", 20, 10, 1));
         rewardCatalog.add(new RewardItem("Complimentary Breakfast", 50, 5, 120));
         rewardCatalog.add(new RewardItem("Spa Discount Voucher", 100, 3, 120));
         rewardCatalog.add(new RewardItem("Free 20% Discount Dining", 500, 1, 120));
+        rewardCatalog.rebalance();
     }
 
-    public ListInterface<RewardItem> getRewardCatalog() { return rewardCatalog.inOrderTraversal(); }
+    public ListInterface<RewardItem> getRewardCatalog() {
+        return rewardCatalog.inOrderTraversal();
+    }
+
+    /** Returns the reward catalog in a simple form suitable for the Boundary. */
+    public RewardItem[] getRewardCatalogArray() {
+        ListInterface<RewardItem> items = getRewardCatalog();
+        RewardItem[] result = new RewardItem[items.getNumberOfEntries()];
+        for (int i = 0; i < result.length; i++)
+            result[i] = items.get(i);
+        return result;
+    }
 
     private int countMatches(Guest guest, String itemName, boolean matchGuest) {
         int count = 0;
         for (int i = 0; i < redemptionHistory.getNumberOfEntries(); i++) {
             LoyaltyTransaction t = redemptionHistory.get(i);
-            boolean matchesGuest = !matchGuest || t.getConfirmationNumber().equals(guest.getConfirmationNumber());
-            if (matchesGuest && t.getItemName().equals(itemName)) count++;
+            boolean matchesGuest = !matchGuest
+                    || confirmationBelongsToMember(guest, t.getConfirmationNumber());
+            if (matchesGuest && t.getItemName().equals(itemName))
+                count++;
         }
         return count;
     }
 
     private int getGuestItemRedemptionCount(Guest guest, String itemName) {
-        return countMatches(guest, itemName, true);
+        int count = countMatches(guest, itemName, true);
+        QueueInterface<PendingItemRequest> temporaryQueue = new ArrayQueue<>();
+        while (!pendingItemQueue.isEmpty()) {
+            PendingItemRequest request = pendingItemQueue.dequeue();
+            if (sameMember(guest, request.getGuest())
+                    && itemName.equals(request.getItem().getItemName()))
+                count++;
+            temporaryQueue.enqueue(request);
+        }
+        while (!temporaryQueue.isEmpty()) {
+            pendingItemQueue.enqueue(temporaryQueue.dequeue());
+        }
+        return count;
     }
 
     public int getTotalItemRedemptionCount(String itemName) {
         return countMatches(null, itemName, false);
     }
 
-    public String redeemRewardItem(Guest guest, RewardItem item) {
+    private int calculateEffectiveRewardCost(Guest guest, RewardItem item) {
+        if (guest == null || item == null)
+            return -1;
         int count = getGuestItemRedemptionCount(guest, item.getItemName());
-        int cost = (count > 0 && count % 5 == 0) ? item.getPointsCost() / 2 : item.getPointsCost();
+        return (count > 0 && (count + 1) % 5 == 0)
+                ? item.getPointsCost() / 2 : item.getPointsCost();
+    }
 
-        if (guest.getLoyaltyPoints() < cost) return "ERROR: Insufficient points! (Required: " + cost + ")";
-        if (item.getStockQuantity() <= 0) return "ERROR: Item out of stock!";
+    public int getEffectiveRewardCost(String confirmationNumber, int itemNumber) {
+        Guest guest = findGuest(confirmationNumber);
+        RewardItem[] items = getRewardCatalogArray();
+        if (guest == null || itemNumber < 1 || itemNumber > items.length)
+            return -1;
+        return calculateEffectiveRewardCost(guest, items[itemNumber - 1]);
+    }
+
+    private int requestRewardRedemption(Guest guest, RewardItem item) {
+        if (guest == null || item == null)
+            return RESULT_NOT_FOUND;
+        checkExpiredPoints(guest);
+        int cost = calculateEffectiveRewardCost(guest, item);
+
+        if (guest.getLoyaltyPoints() < cost)
+            return RESULT_INSUFFICIENT_POINTS;
+        if (item.getStockQuantity() <= 0)
+            return RESULT_OUT_OF_STOCK;
 
         recordPointTransaction(guest, "Redeemed: " + item.getItemName(), -cost);
         item.setStockQuantity(item.getStockQuantity() - 1);
-        redemptionHistory.add(new LoyaltyTransaction(guest.getConfirmationNumber(), guest.getGuestName(), item.getItemName(), cost, item.getValidityMinutes()));
-        return "SUCCESS: Redeemed '" + item.getItemName() + "' for " + cost + " points!";
+        pendingItemQueue.enqueue(new PendingItemRequest(guest, item, cost));
+        return RESULT_SUCCESS;
     }
 
-    public String getFormattedInventory(Guest guest) {
-        StringBuilder sb = new StringBuilder();
-        int count = 0;
-        LocalDateTime now = LocalDateTime.now();
+    public int requestRewardRedemption(String confirmationNumber, int itemNumber) {
+        Guest guest = findGuest(confirmationNumber);
+        if (guest == null)
+            return RESULT_NOT_FOUND;
+        RewardItem[] items = getRewardCatalogArray();
+        if (itemNumber < 1 || itemNumber > items.length)
+            return RESULT_INVALID_SELECTION;
+        return requestRewardRedemption(guest, items[itemNumber - 1]);
+    }
 
+    /** Processes the FIFO queue once and returns the transactions just stored. */
+    public LoyaltyTransaction[] settlePendingRewardRedemptionsData() {
+        LoyaltyTransaction[] processed = new LoyaltyTransaction[pendingItemQueue.getNumberOfEntries()];
+        int index = 0;
+        while (!pendingItemQueue.isEmpty()) {
+            PendingItemRequest request = pendingItemQueue.dequeue();
+            Guest guest = request.getGuest();
+            RewardItem item = request.getItem();
+            LoyaltyTransaction transaction = new LoyaltyTransaction(guest.getConfirmationNumber(),
+                    guest.getGuestName(), item.getItemName(), request.getEffectiveCost(),
+                    item.getValidityMinutes());
+            redemptionHistory.add(transaction);
+            item.recordRedemptionCompleted();
+            processed[index++] = transaction;
+        }
+        return processed;
+    }
+
+    public int getPendingRewardRedemptionCount() {
+        return pendingItemQueue.getNumberOfEntries();
+    }
+
+    public LoyaltyTransaction[] getActiveInventoryArray(String confirmationNumber) {
+        Guest guest = findGuest(confirmationNumber);
+        if (guest == null)
+            return new LoyaltyTransaction[0];
+        ListInterface<LoyaltyTransaction> activeItems = new MyArrayList<>();
+        LocalDateTime now = LocalDateTime.now();
         for (int i = 0; i < redemptionHistory.getNumberOfEntries(); i++) {
             LoyaltyTransaction t = redemptionHistory.get(i);
-            if (t.getConfirmationNumber().equals(guest.getConfirmationNumber())) {
+            if (confirmationBelongsToMember(guest, t.getConfirmationNumber())) {
                 checkAndUpdateExpiry(t, now);
-                sb.append(String.format(" %-3d. %-25s (%s) | %-19s | %-19s | Status: %-8s\n",
-                        ++count, t.getItemName(), t.getTransactionId(), t.getStartTimeFormatted(),
-                        t.getEndTimeFormatted(), t.getStatus().replace("_ACK", "")));
+                if ("ACTIVE".equalsIgnoreCase(t.getStatus()))
+                    activeItems.add(t);
             }
         }
-        return count == 0 ? "No items in storage yet." : sb.toString();
+        LoyaltyTransaction[] result = new LoyaltyTransaction[activeItems.getNumberOfEntries()];
+        for (int i = 0; i < result.length; i++)
+            result[i] = activeItems.get(i);
+        return result;
     }
 
-    public String useRedeemedItem(Guest guest, int choice) {
+    /** Returns all settled reward records for one member, including terminal states. */
+    public LoyaltyTransaction[] getMemberRedemptionHistoryArray(String confirmationNumber) {
+        Guest guest = findGuest(confirmationNumber);
+        if (guest == null)
+            return new LoyaltyTransaction[0];
+        ListInterface<LoyaltyTransaction> records = new MyArrayList<>();
+        LocalDateTime now = LocalDateTime.now();
+        for (int i = 0; i < redemptionHistory.getNumberOfEntries(); i++) {
+            LoyaltyTransaction transaction = redemptionHistory.get(i);
+            if (confirmationBelongsToMember(guest, transaction.getConfirmationNumber())) {
+                checkAndUpdateExpiry(transaction, now);
+                records.add(transaction);
+            }
+        }
+        LoyaltyTransaction[] result = new LoyaltyTransaction[records.getNumberOfEntries()];
+        for (int i = 0; i < result.length; i++)
+            result[i] = records.get(i);
+        return result;
+    }
+
+    private int useRedeemedItemByChoice(Guest guest, int choice) {
+        if (guest == null)
+            return RESULT_NOT_FOUND;
         int count = 0;
         LocalDateTime now = LocalDateTime.now();
-
         for (int i = 0; i < redemptionHistory.getNumberOfEntries(); i++) {
             LoyaltyTransaction t = redemptionHistory.get(i);
-            if (!t.getConfirmationNumber().equals(guest.getConfirmationNumber()) || !"ACTIVE".equals(t.getStatus())) continue;
-            
-            if (checkAndUpdateExpiry(t, now)) continue;
+            if (!confirmationBelongsToMember(guest, t.getConfirmationNumber())
+                    || !"ACTIVE".equals(t.getStatus()))
+                continue;
+
+            if (checkAndUpdateExpiry(t, now))
+                continue;
             if (++count == choice) {
                 t.setStatus("USED");
-                return "SUCCESS: Used '" + t.getItemName() + "'!";
+                return RESULT_SUCCESS;
             }
         }
-        return "ERROR: Invalid item selection.";
+        return RESULT_INVALID_SELECTION;
     }
 
-    public String resetAllRewardStocks() {
+    public int useInventoryItem(String confirmationNumber, int choice) {
+        return useRedeemedItemByChoice(findGuest(confirmationNumber), choice);
+    }
+
+    public int restockAllRewardItems() {
         ListInterface<RewardItem> items = getRewardCatalog();
-        for (int i = 0; i < items.getNumberOfEntries(); i++) items.get(i).resetStockToDefault();
-        return "All reward item been successfully restocks!";
+        for (int i = 0; i < items.getNumberOfEntries(); i++)
+            items.get(i).resetStockToDefault();
+        return items.getNumberOfEntries();
     }
 
-    public String checkNotifications(Guest guest) {
-        StringBuilder sb = new StringBuilder("                    NOTIFICATION ALERTS\n------------------------------------------------------------------------\n");
-        boolean alert = false;
-        String conf = guest.getConfirmationNumber();
-        String tier = guest.getLoyaltyTier() == null ? "standard" : guest.getLoyaltyTier().toLowerCase();
-        String target = calculateTier(guest.getLoyaltyExperiences());
-
-        if (!target.equalsIgnoreCase(tier) && ((tier.equals("standard") && "silver".equalsIgnoreCase(target)) ||
-                 (tier.equals("silver") && "gold".equalsIgnoreCase(target)) || (tier.equals("gold") && "platinum".equalsIgnoreCase(target)))) {
-            sb.append(" [ALERT] Tier upgrade to ").append(target).append(" available!\n");
-            alert = true;
-        }
-
+    private void refreshRewardExpiry(Guest guest) {
+        if (guest == null)
+            return;
         LocalDateTime now = LocalDateTime.now();
-        int expired = 0, expiring = 0;
-
         for (int i = 0; i < redemptionHistory.getNumberOfEntries(); i++) {
             LoyaltyTransaction t = redemptionHistory.get(i);
-            if (!t.getConfirmationNumber().equals(conf)) continue;
-
-            LocalDateTime end = LocalDateTime.parse(t.getEndTimeFormatted(), BATCH_FMT);
-            if ("ACTIVE".equals(t.getStatus()) && now.isAfter(end)) t.setStatus("EXPIRED");
-
-            if ("EXPIRED".equals(t.getStatus())) expired++;
-            else if ("ACTIVE".equals(t.getStatus()) && Duration.between(now, end).toSeconds() <= 60) expiring++;
+            if (confirmationBelongsToMember(guest, t.getConfirmationNumber()))
+                checkAndUpdateExpiry(t, now);
         }
+    }
 
-        if (expired > 0) { sb.append(" [EXPIRY ALERT] ").append(expired).append(" redeemed item(s) expired.\n"); alert = true; }
-        if (expiring > 0) { sb.append(" [EXPIRY ALERT] ").append(expiring).append(" redeemed item(s) expiring within 1 minute.\n"); alert = true; }
+    public int getExpiredRewardCount(Guest guest) {
+        refreshRewardExpiry(guest);
+        int count = 0;
+        for (int i = 0; i < redemptionHistory.getNumberOfEntries(); i++) {
+            LoyaltyTransaction t = redemptionHistory.get(i);
+            if (confirmationBelongsToMember(guest, t.getConfirmationNumber())
+                    && "EXPIRED".equalsIgnoreCase(t.getStatus()))
+                count++;
+        }
+        return count;
+    }
 
+    public int getExpiringSoonRewardCount(Guest guest) {
+        refreshRewardExpiry(guest);
+        int count = 0;
+        LocalDateTime now = LocalDateTime.now();
+        for (int i = 0; i < redemptionHistory.getNumberOfEntries(); i++) {
+            LoyaltyTransaction t = redemptionHistory.get(i);
+            if (!confirmationBelongsToMember(guest, t.getConfirmationNumber())
+                    || !"ACTIVE".equalsIgnoreCase(t.getStatus()))
+                continue;
+            LocalDateTime end = t.getEndTime();
+            long seconds = Duration.between(now, end).getSeconds();
+            if (seconds >= 0 && seconds <= 60)
+                count++;
+        }
+        return count;
+    }
+
+    public String[] getUpcomingDiscountRewardNames(Guest guest) {
+        ListInterface<String> offers = new MyArrayList<>();
         ListInterface<RewardItem> catalog = rewardCatalog.inOrderTraversal();
         for (int i = 0; i < catalog.getNumberOfEntries(); i++) {
-            if (getGuestItemRedemptionCount(guest, catalog.get(i).getItemName()) >= 4) {
-                sb.append(" [ALERT] Personalized Offer: 50% discount on next ").append(catalog.get(i).getItemName()).append("!\n");
-                alert = true;
-            }
+            int redemptionCount = getGuestItemRedemptionCount(guest, catalog.get(i).getItemName());
+            if (redemptionCount > 0 && (redemptionCount + 1) % 5 == 0)
+                offers.add(catalog.get(i).getItemName());
         }
-
-        if (!alert) sb.append(" No new notifications.\n");
-        return sb.append("------------------------------------------------------------------------").toString();
+        String[] result = new String[offers.getNumberOfEntries()];
+        for (int i = 0; i < result.length; i++)
+            result[i] = offers.get(i);
+        return result;
     }
 
     public ListInterface<String> getFilteredPointReport(String status, boolean ascending) {
+        return getFilteredPointReport(status, "ALL", 0, ascending);
+    }
+
+    /** Multi-criteria point audit: status, stay confirmation and point amount. */
+    public ListInterface<String> getFilteredPointReport(String status, String confirmationFilter,
+            int minimumAbsolutePoints, boolean ascending) {
+        return getFilteredPointReport(status, confirmationFilter, minimumAbsolutePoints,
+                "ALL", "ALL", ascending);
+    }
+
+    /**
+     * Multi-criteria point audit: status, stay confirmation, point amount and
+     * inclusive earned-date range.
+     */
+    public ListInterface<String> getFilteredPointReport(String status, String confirmationFilter,
+            int minimumAbsolutePoints, String earnedStartDate, String earnedEndDate,
+            boolean ascending) {
         ListInterface<String> result = new MyArrayList<>();
-        LocalDateTime now = LocalDateTime.now();
-        ListInterface<String> updatedHistory = new MyArrayList<>();
-
-        for (int i = 0; i < pointHistory.getNumberOfEntries(); i++) {
-            String rec = pointHistory.get(i);
-            String[] p = rec.split("\\|");
-            if (p.length >= 6 && "ACTIVE".equalsIgnoreCase(p[5]) && !"-".equals(p[2])) {
-                try {
-                    if (now.isAfter(LocalDateTime.parse(p[2], BATCH_FMT)))
-                        rec = String.format("%s|%s|%s|%s|%s|EXPIRED", p[0], p[1], p[2], p[3], p[4]);
-                } catch (Exception ignored) {}
-            }
-            updatedHistory.add(rec);
+        LocalDate start = parseOptionalReportDate(earnedStartDate);
+        LocalDate end = parseOptionalReportDate(earnedEndDate);
+        if (isInvalidOptionalReportDate(earnedStartDate, start)
+                || isInvalidOptionalReportDate(earnedEndDate, end)
+                || (start != null && end != null && start.isAfter(end)))
+            return result;
+        if (masterGuestTree != null) {
+            ListInterface<Guest> guests = masterGuestTree.inOrderTraversal();
+            for (int i = 0; i < guests.getNumberOfEntries(); i++)
+                checkExpiredPoints(guests.get(i));
         }
-        pointHistory = updatedHistory;
 
         for (int i = 0; i < pointHistory.getNumberOfEntries(); i++) {
-            String[] p = pointHistory.get(i).split("\\|");
-            if (p.length >= 6 && ("ALL".equalsIgnoreCase(status) || p[5].equalsIgnoreCase(status)))
+            String[] point = pointHistory.get(i).split("\\|");
+            String confirmation = point.length >= 5 ? point[4].replace("Conf: ", "").trim() : "";
+            boolean statusMatches = point.length >= 6
+                    && ("ALL".equalsIgnoreCase(status) || point[5].equalsIgnoreCase(status));
+            boolean confirmationMatches = confirmationFilter == null
+                    || confirmationFilter.trim().isEmpty()
+                    || "ALL".equalsIgnoreCase(confirmationFilter)
+                    || confirmation.equalsIgnoreCase(confirmationFilter.trim());
+            boolean pointsMatch = point.length >= 1
+                    && Math.abs(Integer.parseInt(point[0])) >= Math.max(0, minimumAbsolutePoints);
+            boolean earnedDateMatches = matchesEarnedDateRange(point, start, end);
+            if (statusMatches && confirmationMatches && pointsMatch && earnedDateMatches) {
                 result.add(pointHistory.get(i));
+            }
         }
 
         result.sort((a, b) -> {
@@ -320,25 +707,96 @@ public class LoyaltyController {
         return result;
     }
 
+    private LocalDate parseOptionalReportDate(String value) {
+        if (value == null || value.trim().isEmpty() || "ALL".equalsIgnoreCase(value.trim()))
+            return null;
+        try {
+            return LocalDate.parse(value.trim());
+        } catch (java.time.format.DateTimeParseException ignored) {
+            return null;
+        }
+    }
+
+    private boolean isInvalidOptionalReportDate(String value, LocalDate parsedDate) {
+        return value != null && !value.trim().isEmpty() && !"ALL".equalsIgnoreCase(value.trim())
+                && parsedDate == null;
+    }
+
+    private boolean matchesEarnedDateRange(String[] point, LocalDate start, LocalDate end) {
+        if (point.length < 2)
+            return false;
+        try {
+            LocalDate earnedDate = LocalDateTime.parse(point[1], BATCH_FMT).toLocalDate();
+            return (start == null || !earnedDate.isBefore(start))
+                    && (end == null || !earnedDate.isAfter(end));
+        } catch (java.time.format.DateTimeParseException ignored) {
+            return false;
+        }
+    }
+
+    /** Returns the filtered point report without exposing the internal List ADT. */
+    public String[] getFilteredPointReportArray(String status, boolean ascending) {
+        return getFilteredPointReportArray(status, "ALL", 0, ascending);
+    }
+
+    public String[] getFilteredPointReportArray(String status, String confirmationFilter,
+            int minimumAbsolutePoints, boolean ascending) {
+        return getFilteredPointReportArray(status, confirmationFilter, minimumAbsolutePoints,
+                "ALL", "ALL", ascending);
+    }
+
+    public String[] getFilteredPointReportArray(String status, String confirmationFilter,
+            int minimumAbsolutePoints, String earnedStartDate, String earnedEndDate,
+            boolean ascending) {
+        ListInterface<String> report = getFilteredPointReport(status, confirmationFilter,
+                minimumAbsolutePoints, earnedStartDate, earnedEndDate, ascending);
+        String[] result = new String[report.getNumberOfEntries()];
+        for (int i = 0; i < result.length; i++)
+            result[i] = report.get(i);
+        return result;
+    }
+
     public ListInterface<RewardItem> getFilteredRewardReport(int maxStock, boolean ascending) {
+        return getFilteredRewardReport(maxStock, 0, ascending);
+    }
+
+    /** Multi-criteria reward report: stock ceiling and completed redemptions. */
+    public ListInterface<RewardItem> getFilteredRewardReport(int maxStock, int minimumRedeemed,
+            boolean ascending) {
         ListInterface<RewardItem> catalog = getRewardCatalog();
         ListInterface<RewardItem> result = new MyArrayList<>();
-        
+
         for (int i = 0; i < catalog.getNumberOfEntries(); i++)
-            if (catalog.get(i).getStockQuantity() <= maxStock) result.add(catalog.get(i));
-        
+            if (catalog.get(i).getStockQuantity() <= maxStock
+                    && catalog.get(i).getTotalRedeemed() >= Math.max(0, minimumRedeemed))
+                result.add(catalog.get(i));
+
         result.sort((a, b) -> (ascending ? 1 : -1) * Integer.compare(a.getPointsCost(), b.getPointsCost()));
         return result;
     }
-    
+
+    /**
+     * Returns the filtered reward report without exposing the internal List ADT.
+     */
+    public RewardItem[] getFilteredRewardReportArray(int maxStock, boolean ascending) {
+        return getFilteredRewardReportArray(maxStock, 0, ascending);
+    }
+
+    public RewardItem[] getFilteredRewardReportArray(int maxStock, int minimumRedeemed,
+            boolean ascending) {
+        ListInterface<RewardItem> report = getFilteredRewardReport(maxStock, minimumRedeemed, ascending);
+        RewardItem[] result = new RewardItem[report.getNumberOfEntries()];
+        for (int i = 0; i < result.length; i++)
+            result[i] = report.get(i);
+        return result;
+    }
+
     private boolean checkAndUpdateExpiry(LoyaltyTransaction t, LocalDateTime now) {
         if ("ACTIVE".equalsIgnoreCase(t.getStatus())) {
-            try {
-                if (now.isAfter(LocalDateTime.parse(t.getEndTimeFormatted(), BATCH_FMT))) {
-                    t.setStatus("EXPIRED");
-                    return true;
-                }
-            } catch (Exception ignored) {}
+            if (now.isAfter(t.getEndTime())) {
+                t.setStatus("EXPIRED");
+                return true;
+            }
         }
         return !"ACTIVE".equalsIgnoreCase(t.getStatus());
     }
@@ -348,7 +806,11 @@ public class LoyaltyController {
         LocalDateTime now = LocalDateTime.now();
         for (int i = 0; i < redemptionHistory.getNumberOfEntries(); i++) {
             LoyaltyTransaction t = redemptionHistory.get(i);
-            if (t.getItemName().equalsIgnoreCase(itemName) && !checkAndUpdateExpiry(t, now)) count++;
+            boolean guestMatches = guest == null
+                    || confirmationBelongsToMember(guest, t.getConfirmationNumber());
+            if (guestMatches && t.getItemName().equalsIgnoreCase(itemName)
+                    && !checkAndUpdateExpiry(t, now))
+                count++;
         }
         return count;
     }
@@ -360,7 +822,8 @@ public class LoyaltyController {
             LoyaltyTransaction t = redemptionHistory.get(i);
             if (t.getItemName().equalsIgnoreCase(itemName)) {
                 checkAndUpdateExpiry(t, now);
-                if (!"ACTIVE".equalsIgnoreCase(t.getStatus())) count++;
+                if ("EXPIRED".equalsIgnoreCase(t.getStatus()))
+                    count++;
             }
         }
         return count;

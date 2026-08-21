@@ -11,6 +11,7 @@ public interface StackInterface<T> {
 
     /**
      * Pushes a new entry onto the top of this stack.
+     *
      * @param newEntry An object to be added.
      * @return true if the addition is successful.
      */
@@ -18,24 +19,28 @@ public interface StackInterface<T> {
 
     /**
      * Removes and returns the entry at the top of this stack.
+     *
      * @return The top entry, or null if the stack is empty.
      */
     T pop();
 
     /**
      * Returns the entry at the top of this stack without removing it.
+     *
      * @return The top entry, or null if the stack is empty.
      */
     T peek();
 
     /**
      * Checks whether this stack is empty.
+     *
      * @return true if the stack is empty; false otherwise.
      */
     boolean isEmpty();
 
     /**
      * Gets the number of entries currently in this stack.
+     *
      * @return The integer number of entries.
      */
     int getNumberOfEntries();
@@ -49,6 +54,7 @@ public interface StackInterface<T> {
      * Returns a snapshot of all entries, ordered from most-recently-pushed
      * to least-recently-pushed, WITHOUT modifying this stack. Used to
      * generate task-log reports while keeping rollback available.
+     *
      * @return A ListInterface containing all entries, top-to-bottom order.
      */
     ListInterface<T> toList();
