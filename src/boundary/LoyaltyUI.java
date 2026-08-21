@@ -15,8 +15,7 @@ import java.util.Scanner;
  * It collects input and formats the domain data/results returned by Control.
  */
 public class LoyaltyUI {
-    private static final DateTimeFormatter TRANSACTION_TIME_FORMAT =
-            DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+    private static final DateTimeFormatter TRANSACTION_TIME_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     private final LoyaltyController controller;
 
     public LoyaltyUI(LoyaltyController controller) {
