@@ -98,7 +98,7 @@ public interface BSTInterface<T extends Comparable<T>> {
     ListInterface<T> postOrderTraversal();
 
     /**
-     * Rebalances the BST into a perfectly height-balanced BST.
+     * Rebalances the BST into a height-balanced BST.
      * Extracts sorted entries via in-order traversal and rebuilds recursively.
      */
     void rebalance();
