@@ -26,6 +26,26 @@ public class FrontDeskController {
     private ListInterface<Booking> sharedBookingList;
     private LoyaltyController loyaltyController;
     private int syncedRoomCount = -1;
+    private int nextGuestConfirmationNumber;
+
+    /** Result of a Front Desk registration with a system-generated key. */
+    public static class GuestRegistrationResult {
+        private final int status;
+        private final Guest guest;
+
+        private GuestRegistrationResult(int status, Guest guest) {
+            this.status = status;
+            this.guest = guest;
+        }
+
+        public int getStatus() {
+            return status;
+        }
+
+        public Guest getGuest() {
+            return guest;
+        }
+    }
 
     /**
      * Billing calculation result returned to the boundary for display and checkout.
@@ -126,10 +146,22 @@ public class FrontDeskController {
         this.roomTree = new BinarySearchTree<>();
         this.sharedRoomList = sharedRoomList;
         this.sharedBookingList = (sharedBookingList != null) ? sharedBookingList : new MyArrayList<>();
+        initializeNextGuestConfirmationNumber();
         syncRoomTree();
         this.loyaltyController = (loyaltyController != null)
                 ? loyaltyController
                 : new LoyaltyController(this.guestTree);
+    }
+
+    private void initializeNextGuestConfirmationNumber() {
+        int highest = 10000000;
+        ListInterface<Guest> guests = guestTree.inOrderTraversal();
+        for (int i = 0; i < guests.getNumberOfEntries(); i++) {
+            String confirmation = guests.get(i).getConfirmationNumber();
+            if (confirmation != null && confirmation.matches("\\d{8}"))
+                highest = Math.max(highest, Integer.parseInt(confirmation));
+        }
+        nextGuestConfirmationNumber = highest + 1;
     }
 
     private void syncRoomTree() {
@@ -138,18 +170,34 @@ public class FrontDeskController {
 
         // Room objects are shared references, so status/price/type changes are
         // already visible inside the tree. Rebuild only when the list structure
-        // changes, then rebalance once to prevent sorted room numbers forming a
-        // linked-list-shaped BST.
+        // changes. Keep the insertion-order shape so the diagnostic menu can
+        // demonstrate the visible effect of an explicit BST rebalance.
         roomTree.clear();
         for (int i = 0; i < sharedRoomList.getNumberOfEntries(); i++)
             roomTree.add(sharedRoomList.get(i));
-        roomTree.rebalance();
         syncedRoomCount = sharedRoomList.getNumberOfEntries();
     }
 
     // Search guest stay record by IC Number - Non-Key Linear Traversal O(n)
     public Guest searchGuestByIC(String icNo) {
         return ControllerDataSupport.findGuestByIc(guestTree.inOrderTraversal(), icNo);
+    }
+
+    /** Returns every stay record belonging to the same IC/passport identity. */
+    public Guest[] searchGuestsByICArray(String icNo) {
+        ListInterface<Guest> matches = new MyArrayList<>();
+        if (icNo == null || icNo.trim().isEmpty())
+            return new Guest[0];
+        ListInterface<Guest> guests = guestTree.inOrderTraversal();
+        for (int i = 0; i < guests.getNumberOfEntries(); i++) {
+            Guest guest = guests.get(i);
+            if (guest.getIcNo() != null && guest.getIcNo().equalsIgnoreCase(icNo.trim()))
+                matches.add(guest);
+        }
+        Guest[] result = new Guest[matches.getNumberOfEntries()];
+        for (int i = 0; i < matches.getNumberOfEntries(); i++)
+            result[i] = matches.get(i);
+        return result;
     }
 
     // Search guest stay record by Confirmation Number (BST Primary Key) - O(log n)
@@ -206,6 +254,31 @@ public class FrontDeskController {
         return addValidatedGuest(guest) ? 1 : -1;
     }
 
+    /**
+     * Registers a guest while keeping confirmation-number generation inside the
+     * controller. Return status: 1 success, -1 invalid data, -3 duplicate
+     * IC/passport, -4 no 8-digit confirmation number remains available.
+     */
+    public GuestRegistrationResult registerGuestWithGeneratedConfirmation(
+            String name, String icNo, String phoneNumber) {
+        if (isMissingRequired(name) || isMissingRequired(icNo) || !isValidOptionalPhone(phoneNumber))
+            return new GuestRegistrationResult(-1, null);
+        if (searchGuestByIC(icNo) != null)
+            return new GuestRegistrationResult(-3, null);
+
+        while (nextGuestConfirmationNumber <= 99999999
+                && searchGuestByConfirmationNumber(String.format("%08d", nextGuestConfirmationNumber)) != null)
+            nextGuestConfirmationNumber++;
+        if (nextGuestConfirmationNumber > 99999999)
+            return new GuestRegistrationResult(-4, null);
+
+        String confirmation = String.format("%08d", nextGuestConfirmationNumber++);
+        Guest guest = new Guest(name, icNo, phoneNumber, confirmation, "Standard", 0);
+        return addValidatedGuest(guest)
+                ? new GuestRegistrationResult(1, guest)
+                : new GuestRegistrationResult(-1, null);
+    }
+
     // Add a new guest into the BST
     public boolean registerGuest(Guest guest) {
         if (guest == null || guest.getConfirmationNumber() == null
@@ -222,10 +295,7 @@ public class FrontDeskController {
     }
 
     private boolean addValidatedGuest(Guest guest) {
-        boolean added = guestTree.add(guest);
-        if (added && !guestTree.isBalanced())
-            guestTree.rebalance();
-        return added;
+        return guestTree.add(guest);
     }
 
     /**
@@ -311,35 +381,18 @@ public class FrontDeskController {
 
     // Remove a guest from the BST
     public Guest removeGuest(String confirmNo) {
-        if (confirmNo == null || confirmNo.trim().isEmpty())
-            return null;
-        Guest existing = searchGuestByConfirmationNumber(confirmNo);
-        if (existing == null || existing.isCheckedIn())
+        if (confirmNo == null || confirmNo.trim().isEmpty() || !canRemoveGuest(confirmNo))
             return null;
         Guest dummy = new Guest("", confirmNo.trim(), "", 0);
-        Guest removed = guestTree.remove(dummy);
-        if (removed != null) {
-            String assignedRoomNumber = removed.getAssignedRoomNumber();
-            if (assignedRoomNumber != null) {
-                Room room = searchRoomByNumber(assignedRoomNumber);
-                if (room != null && "Reserved".equalsIgnoreCase(room.getRoomStatus())) {
-                    room.setRoomStatus("Ready for Check-In");
-                }
-            }
-            Booking booking = findBookingByConfirmation(confirmNo);
-            if (booking != null && !"CheckedOut".equalsIgnoreCase(booking.getBookingStatus())) {
-                booking.recordCancellation("Guest record removed at Front Desk", "Front Desk Staff");
-            }
-            if (!guestTree.isBalanced())
-                guestTree.rebalance();
-        }
-        return removed;
+        return guestTree.remove(dummy);
     }
 
-    /** A checked-in stay must be checked out before its guest record is removed. */
+    /** Only a newly registered profile with no booking/history may be removed. */
     public boolean canRemoveGuest(String confirmationNumber) {
         Guest guest = searchGuestByConfirmationNumber(confirmationNumber);
-        return guest != null && !guest.isCheckedIn();
+        return guest != null
+                && "Registered".equalsIgnoreCase(guest.getBookingStatus())
+                && findBookingByConfirmation(confirmationNumber) == null;
     }
 
     private Booking findBookingByConfirmation(String confirmationNumber) {
@@ -406,6 +459,15 @@ public class FrontDeskController {
 
     public Guest[] searchGuestsByNameArray(String nameQuery) {
         ListInterface<Guest> guests = searchGuestsByName(nameQuery);
+        Guest[] result = new Guest[guests.getNumberOfEntries()];
+        for (int i = 0; i < guests.getNumberOfEntries(); i++)
+            result[i] = guests.get(i);
+        return result;
+    }
+
+    /** Returns the complete Master Guest Registry in BST key order. */
+    public Guest[] getAllGuestArray() {
+        ListInterface<Guest> guests = guestTree.inOrderTraversal();
         Guest[] result = new Guest[guests.getNumberOfEntries()];
         for (int i = 0; i < guests.getNumberOfEntries(); i++)
             result[i] = guests.get(i);
@@ -1010,6 +1072,12 @@ public class FrontDeskController {
         return new int[] { guestTree.getNumberOfEntries(), guestTree.getHeight(), guestTree.getLeafCount() };
     }
 
+    /** Number of nodes, height and leaf count for the room-tree diagnostics. */
+    public int[] getRoomTreeStatistics() {
+        syncRoomTree();
+        return new int[] { roomTree.getNumberOfEntries(), roomTree.getHeight(), roomTree.getLeafCount() };
+    }
+
     public Guest getSmallestGuest() {
         return guestTree.getMin();
     }
@@ -1060,10 +1128,10 @@ public class FrontDeskController {
 
     // Report 1: Room status summary
     // Index: [0]=Total, [1]=Ready, [2]=Occupied, [3]=Dirty, [4]=Cleaning,
-    // [5]=Inspected, [6]=Reserved
+    // [5]=Inspected, [6]=Reserved, [7]=Maintenance
     public int[] getRoomStatusSummary() {
         syncRoomTree();
-        int[] summary = new int[7]; // Total, Ready, Occupied, Dirty, Cleaning, Inspected, Reserved
+        int[] summary = new int[8];
         ListInterface<Room> rooms = roomTree.inOrderTraversal();
         summary[0] = rooms.getNumberOfEntries();
 
@@ -1081,6 +1149,8 @@ public class FrontDeskController {
                 summary[5]++;
             else if ("Reserved".equalsIgnoreCase(status))
                 summary[6]++;
+            else if ("Maintenance".equalsIgnoreCase(status))
+                summary[7]++;
         }
         return summary;
     }

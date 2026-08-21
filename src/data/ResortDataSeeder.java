@@ -47,10 +47,6 @@ public final class ResortDataSeeder {
         bob.setNumberOfNights(2);
         bob.setSpecialRequest("Late arrival after 8 PM");
 
-        Guest charlie = new Guest("Charlie Lim", "A12345678", "+60 16-333 4455", "Male",
-                "Singaporean", "charlie.lim@example.com", "10000003", "Silver", 200);
-        charlie.setSpecialRequest("Quiet room if available");
-
         Guest david = new Guest("David Wong", "950404-01-3322", "+60 19-444 5566", "Male",
                 "Malaysian", "david.wong@example.com", "10000004", "Standard", 50);
         david.setBookingStatus("CheckedOut");
@@ -76,10 +72,6 @@ public final class ResortDataSeeder {
         frank.setCheckInDate(today.minusDays(2).toString());
         frank.setNumberOfNights(1);
         frank.setSpecialRequest("Non-smoking room");
-
-        Guest grace = new Guest("Grace Kim", "P-KR-552810", "+82 10-8821 5520", "Female",
-                "Korean", "grace.kim@example.com", "10000007", "Standard", 80);
-        grace.setSpecialRequest("Near the lift");
 
         Guest hassan = new Guest("Hassan Rahman", "930818-10-4412", "+60 13-818 4412", "Male",
                 "Malaysian", "hassan.rahman@example.com", "10000008", "Silver", 320);
@@ -137,9 +129,7 @@ public final class ResortDataSeeder {
         guestTree.add(bob);
         guestTree.add(frank);
         guestTree.add(alice);
-        guestTree.add(charlie);
         guestTree.add(eva);
-        guestTree.add(grace);
         guestTree.add(hassan);
         guestTree.add(isabella);
         guestTree.add(jason);

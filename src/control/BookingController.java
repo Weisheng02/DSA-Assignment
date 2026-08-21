@@ -72,7 +72,6 @@ public class BookingController {
             masterGuestRegistry.add(g1);
             masterGuestRegistry.add(g2);
             masterGuestRegistry.add(g3);
-            masterGuestRegistry.rebalance();
         }
 
         // App owns the shared master guests/bookings. This method only provides
@@ -140,8 +139,6 @@ public class BookingController {
         // Sync to Master Guest Registry so FrontDesk & Loyalty can see this guest
         if (masterGuestRegistry != null) {
             masterGuestRegistry.add(newGuest);
-            if (!masterGuestRegistry.isBalanced())
-                masterGuestRegistry.rebalance();
         }
         return newGuest;
     }
