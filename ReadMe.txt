@@ -7,7 +7,7 @@ Java Development Kit (JDK) 8 or newer. No external libraries or data files are r
 
 How to run
 ----------
-1. Open this folder as a Java project in NetBeans, or open a terminal in this folder.
+1. Open this folder as a Java project in NetBeans
 2. Compile all Java files under src.
 3. Run the App class.
 
