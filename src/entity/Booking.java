@@ -5,7 +5,7 @@ import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 
 /**
- * Author: Zhi Xuan
+ * Author: Yeoh Zhi Xuan
  * Entity class representing a Guest Booking / Reservation
  */
 public class Booking {

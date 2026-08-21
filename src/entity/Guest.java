@@ -1,7 +1,7 @@
 package entity;
 
 /**
- * Author: Weisheng
+ * Author: Yeap Wei Sheng
  * Entity class representing a Resort Guest Stay / Front Desk Check-In Record.
  *
  * Stores guest person identity (icNo) + stay/booking information.

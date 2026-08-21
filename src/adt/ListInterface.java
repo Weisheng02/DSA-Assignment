@@ -3,7 +3,7 @@ package adt;
 import java.util.Comparator;
 
 /**
- * Author: Weisheng
+ * Author: Yeap Wei Sheng
  * Collection ADT Interface for List Operations
  */
 public interface ListInterface<T> {

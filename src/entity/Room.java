@@ -1,7 +1,7 @@
 package entity;
 
 /**
- * Author: Weisheng
+ * Author: Yeap Wei Sheng
  * Entity class representing a Resort Room
  */
 public class Room implements Comparable<Room> {

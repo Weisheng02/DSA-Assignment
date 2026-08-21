@@ -3,7 +3,7 @@ package entity;
 import java.time.LocalDateTime;
 
 /**
- * Author: Hock Siang
+ * Author: Tan Hock Siang
  * A traceable batch of loyalty points with its own expiry and remaining balance.
  */
 public class PointBatch {

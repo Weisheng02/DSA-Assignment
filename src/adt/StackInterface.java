@@ -1,7 +1,7 @@
 package adt;
 
 /**
- * Author: Kai Wei
+ * Author: Nyong Kai Wei
  * Collection ADT Interface for Stack (LIFO) Operations.
  * This is the Linear ADT used by the Housekeeping & Task Log module:
  * every status change is pushed on, and an incorrect change can be

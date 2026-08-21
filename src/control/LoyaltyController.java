@@ -17,7 +17,7 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 
 /**
- * Author: Hock Siang
+ * Author: Tan Hock Siang
  * Loyalty & Rewards module business logic controller.
  */
 public class LoyaltyController {

@@ -3,7 +3,7 @@ package entity;
 import java.time.LocalDateTime;
 
 /**
- * Author: Hock Siang
+ * Author: Tan Hock Siang
  * Represents a loyalty reward redemption transaction.
  */
 public class LoyaltyTransaction implements Comparable<LoyaltyTransaction> {

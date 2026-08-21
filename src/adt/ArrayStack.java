@@ -1,7 +1,7 @@
 package adt;
 
 /**
- * Author: Kai Wei
+ * Author: Nyong Kai Wei
  * Custom Array-Based Collection ADT Implementation: Stack (Linear ADT).
  * Supports O(1) push/pop/peek, used to give the Housekeeping module its
  * instant-rollback capability.

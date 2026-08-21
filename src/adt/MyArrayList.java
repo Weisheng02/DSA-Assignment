@@ -3,7 +3,7 @@ package adt;
 import java.util.Comparator;
 
 /**
- * Author: Weisheng
+ * Author: Yeap Wei Sheng
  * Custom Array-Based Collection ADT Implementation
  */
 public class MyArrayList<T> implements ListInterface<T> {

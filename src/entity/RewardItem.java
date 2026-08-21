@@ -1,7 +1,7 @@
 package entity;
 
 /**
- * Author: Hock Siang
+ * Author: Tan Hock Siang
  * Entity class representing a single item in the Loyalty & Rewards Catalog.
  * Stored via Binary Search Tree (BST) using itemId as the key.
  */

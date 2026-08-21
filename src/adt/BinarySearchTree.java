@@ -3,7 +3,7 @@ package adt;
 import java.util.function.Function;
 
 /**
- * Author: Weisheng
+ * Author: Yeap Wei Sheng
  * Linked-node Binary Search Tree implementation.
  * Supports searching, insertion, deletion, range search, and traversal.
  */

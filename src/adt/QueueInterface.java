@@ -1,7 +1,7 @@
 package adt;
 
 /**
- * Author: Zhi Xuan
+ * Author: Yeoh Zhi Xuan
  * Collection ADT Interface for Queue (FIFO) Operations.
  * This is the Linear ADT used by the Walk-In Registrations & Standard Booking
  * module: incoming guests are enqueued in chronological order, and the next

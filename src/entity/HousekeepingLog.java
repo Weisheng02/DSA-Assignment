@@ -4,7 +4,7 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 
 /**
- * Author: Kai Wei
+ * Author: Nyong Kai Wei
  * Entity class representing a single Housekeeping status-change record.
  * Each time a room's cleaning status is updated, one HousekeepingLog entry
  * is created and pushed onto the task-log Stack, so that the most recent

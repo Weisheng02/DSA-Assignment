@@ -1,7 +1,7 @@
 package adt;
 
 /**
- * Author: Zhi Xuan
+ * Author: Yeoh Zhi Xuan
  * Custom Array-Based Collection ADT Implementation: Circular Queue (Linear
  * ADT).
  * Uses a circular array with front and rear pointers to achieve O(1) enqueue

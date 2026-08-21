@@ -12,7 +12,7 @@ import java.time.format.DateTimeParseException;
 import java.util.Comparator;
 
 /**
- * Author: Weisheng
+ * Author: Yeap Wei Sheng
  * Controller for Front-Desk Operations. Uses BST for guest and room management.
  */
 public class FrontDeskController {

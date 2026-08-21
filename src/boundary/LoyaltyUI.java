@@ -10,7 +10,7 @@ import java.time.format.DateTimeParseException;
 import java.util.Scanner;
 
 /**
- * Author: Hock Siang
+ * Author: Tan Hock Siang
  * Console boundary for Loyalty & Rewards.
  * It collects input and formats the domain data/results returned by Control.
  */

@@ -13,7 +13,7 @@ import java.time.format.DateTimeParseException;
 import java.util.Comparator;
 
 /**
- * Author: Zhi Xuan
+ * Author: Yeoh Zhi Xuan
  * Controller for Walk-In Registrations & Standard Booking.
  * Uses Queue (FIFO) to manage incoming guests.
  */

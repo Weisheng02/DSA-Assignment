@@ -10,7 +10,7 @@ import java.time.format.DateTimeParseException;
 import java.util.Scanner;
 
 /**
- * Author: Zhi Xuan
+ * Author: Yeoh Zhi Xuan
  * Boundary class for walk-in registrations and standard booking.
  */
 public class BookingUI {
