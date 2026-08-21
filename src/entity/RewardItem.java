@@ -88,6 +88,10 @@ public class RewardItem implements Comparable<RewardItem> {
 
     @Override
     public int compareTo(RewardItem other) {
+        if (other == null || other.itemId == null)
+            return 1;
+        if (this.itemId == null)
+            return -1;
         return this.itemId.compareTo(other.itemId);
     }
 

@@ -140,6 +140,11 @@ public class BinarySearchTree<T extends Comparable<T>> implements BSTInterface<T
     public ListInterface<T> rangeSearch(T minEntry, T maxEntry) {
         ListInterface<T> result = new MyArrayList<>();
         if (minEntry == null || maxEntry == null || root == null) return result;
+        if (minEntry.compareTo(maxEntry) > 0) {
+            T temp = minEntry;
+            minEntry = maxEntry;
+            maxEntry = temp;
+        }
         rangeSearchHelper(root, minEntry, maxEntry, result);
         return result;
     }

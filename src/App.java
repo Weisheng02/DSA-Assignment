@@ -36,9 +36,9 @@ public class App {
                 ResortDataSeeder.seed(masterGuestRegistry, sharedRoomList, sharedBookingList);
 
                 // 3. Instantiate UI Subsystems passing shared memory references
-                LoyaltyController loyaltyController = new LoyaltyController(masterGuestRegistry);
                 BookingController bookingController = new BookingController(
                                 sharedRoomList, masterGuestRegistry, sharedBookingList);
+                LoyaltyController loyaltyController = new LoyaltyController(masterGuestRegistry);
                 HousekeepingController housekeepingController = new HousekeepingController(sharedRoomList);
                 FrontDeskController frontDeskController = new FrontDeskController(
                                 masterGuestRegistry, sharedRoomList, sharedBookingList, loyaltyController);

@@ -67,6 +67,10 @@ public class LoyaltyTransaction implements Comparable<LoyaltyTransaction> {
 
     @Override
     public int compareTo(LoyaltyTransaction other) {
+        if (other == null || other.transactionId == null)
+            return 1;
+        if (this.transactionId == null)
+            return -1;
         return this.transactionId.compareTo(other.transactionId);
     }
 
