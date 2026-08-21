@@ -7,7 +7,10 @@ import entity.Guest;
 import entity.Room;
 import java.time.LocalDate;
 
-/** Creates the shared in-memory demonstration data used by App. */
+/**
+ * Author: Weisheng
+ * Creates the shared in-memory demonstration data used by App.
+ */
 public final class ResortDataSeeder {
 
     private ResortDataSeeder() {

@@ -14,7 +14,7 @@ How to run
 Terminal commands:
 
   mkdir -p bin
-  javac -d bin $(find src -name '*.java')
+  javac -encoding UTF-8 -d bin $(find src -name '*.java')
   java -cp bin App
 
 The program displays a main menu with these modules:
@@ -49,7 +49,7 @@ Regression checks
 -----------------
 After compiling the source, compile and run the checks with assertions enabled:
 
-  javac -cp bin -d bin test/ControllerRegressionTest.java
+  javac -encoding UTF-8 -cp bin -d bin test/ControllerRegressionTest.java
   java -ea -cp bin ControllerRegressionTest
 
 The checks cover shared room/booking state, date and overlap validation,

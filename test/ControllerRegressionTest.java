@@ -18,7 +18,10 @@ import entity.RewardItem;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 
-/** Simple regression checks; run with java -ea ControllerRegressionTest. */
+/**
+ * Author: Weisheng
+ * Simple regression checks; run with java -ea ControllerRegressionTest.
+ */
 public class ControllerRegressionTest {
 
     public static void main(String[] args) {

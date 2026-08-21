@@ -1,6 +1,9 @@
 package boundary;
 
-/** Small shared helper that keeps console tables consistent across all UIs. */
+/**
+ * Author: Weisheng
+ * Small shared helper that keeps console tables consistent across all UIs.
+ */
 final class ConsoleTable {
 
     private ConsoleTable() {

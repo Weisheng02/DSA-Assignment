@@ -9,7 +9,7 @@ import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
 
 /**
- * Author: Team
+ * Author: Weisheng
  * Shared, stateless data-query and reservation rules used by the controllers.
  * Public controller methods remain the module boundary; this class prevents the
  * same cross-module rule from drifting into several different implementations.
