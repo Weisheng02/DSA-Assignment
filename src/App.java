@@ -17,7 +17,7 @@ import entity.Room;
 import java.util.Scanner;
 
 /**
- * Author: Yeap Wei Sheng
+ * Author: Yeap Wei Sheng, Yeoh Zhi Xuan, Tan Hock Siang, Nyong Kai Wei
  * Main Application Entrance for TARUMT Resorts Management System
  * Driven by ONE shared Master Guest Registry and Shared Master Room List in
  * memory.
