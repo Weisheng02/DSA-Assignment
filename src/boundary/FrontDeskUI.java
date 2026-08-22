@@ -32,7 +32,7 @@ public class FrontDeskUI {
             System.out.println("            FRONT DESK MANAGEMENT SYSTEM          ");
             System.out.println("--------------------------------------------------");
             System.out.println("1. Search Guest Information");
-            System.out.println("2. Manage Guest Records");
+            System.out.println("2. Update Existing Guest Profile");
             System.out.println("3. Search Room Availability");
             System.out.println("4. Display All Room Statuses");
             System.out.println("5. Process Guest Check-In");
@@ -51,7 +51,7 @@ public class FrontDeskUI {
                     guestSearch();
                     break;
                 case 2:
-                    guestManagement();
+                    updateProfile();
                     break;
                 case 3:
                     roomAvailability();
@@ -84,7 +84,7 @@ public class FrontDeskUI {
                     System.out.println("Returning to Main Menu...");
                     break;
             }
-            if (choice >= 3 && choice <= 9)
+            if (choice >= 2 && choice <= 9)
                 pauseForEnter();
         } while (choice != 0);
     }
@@ -128,33 +128,6 @@ public class FrontDeskUI {
         } while (mode != 0);
     }
 
-    private void guestManagement() {
-        int choice;
-        do {
-            System.out.print(
-                    "\n--- Manage Guest Records ---\n1. Register New Guest\n2. Update Guest Profile\n3. Remove Unbooked Guest Record\n0. Return\n--------------------------------------------------\n"
-                            + //
-                            "Enter choice (0-3): ");
-            choice = readMenuChoice(0, 3);
-            if (choice == 1) {
-                String name = readRequiredTextOrBack("Enter Guest Name: ");
-                if (name == null)
-                    continue;
-                String ic = readRequiredTextOrBack("Enter IC / Passport Number: ");
-                if (ic == null)
-                    continue;
-                System.out.print("Enter Phone Number (or press Enter to skip): ");
-                String phone = scanner.nextLine().trim();
-                printRegistrationResult(controller.registerGuestWithGeneratedConfirmation(name, ic, phone), ic);
-            } else if (choice == 2)
-                updateProfile();
-            else if (choice == 3)
-                removeGuest();
-            if (choice != 0)
-                pauseForEnter();
-        } while (choice != 0);
-    }
-
     private void updateProfile() {
         String confirmation = readConfirmation("Enter Confirmation Number to update: ");
         if (confirmation == null)
@@ -172,7 +145,7 @@ public class FrontDeskUI {
         String gender = optional("Gender", current[3]);
         String nationality = optional("Nationality", current[4]);
         String email = optional("Email", current[5]);
-        String request = optional("Special Request", current[6]);
+        String request = optional("Special Request (this stay only)", current[6]);
         int result = controller.updateGuestProfile(confirmation, name, ic, phone, gender, nationality, email, request);
         if (result == 1) {
             System.out.println("Guest profile updated successfully. Confirmation Number remains unchanged.");
@@ -187,58 +160,6 @@ public class FrontDeskUI {
             System.out.println("Update failed: Loyalty identity and transaction history could not be migrated safely.");
         else
             System.out.println("Update failed: Guest name and IC / Passport are required.");
-    }
-
-    private void removeGuest() {
-        String ic = readRequiredTextOrBack("Enter IC / Passport Number to find guest records: ");
-        if (ic == null)
-            return;
-        Guest[] matches = controller.searchGuestsByICArray(ic);
-        if (matches.length == 0) {
-            System.out.println("No guest record found for IC / Passport " + ic + ".");
-            return;
-        }
-        Guest guest = matches[0];
-        if (matches.length > 1) {
-            System.out.println("Multiple stay records found. Select the exact record to remove:");
-            printGuestResultTable(matches);
-            String confirmation = readConfirmation("Enter Confirmation Number to remove: ");
-            if (confirmation == null)
-                return;
-            guest = findGuestInResults(matches, confirmation);
-            if (guest == null) {
-                System.out.println("That Confirmation Number does not belong to the entered IC / Passport.");
-                return;
-            }
-        }
-        String confirmation = guest.getConfirmationNumber();
-        if (!controller.canRemoveGuest(confirmation)) {
-            System.out.println("Cannot remove this record: only an unbooked guest with Registered status can be "
-                    + "removed. Reservations and stay history must be handled through cancellation or check-out.");
-            return;
-        }
-        printGuestDetails(guest);
-        String confirmationChoice = readYesNoOrBack("Permanently remove this guest record? (Y/N): ");
-        if ("Y".equals(confirmationChoice)) {
-            Guest removed = controller.removeGuest(confirmation);
-            if (removed == null) {
-                System.out.println("Guest removal failed.");
-            } else {
-                String room = removed.getAssignedRoomNumber();
-                printOperationSummary("GUEST RECORD REMOVED",
-                        new String[] { "Guest", "Confirmation No", "Released Room", "Booking Action" },
-                        new String[] { removed.getGuestName(), confirmation, valueOrNa(room),
-                                room == null || room.isEmpty() ? "No assigned room" : "Booking cancelled" });
-            }
-        } else if (confirmationChoice != null)
-            System.out.println("Removal cancelled. No data was changed.");
-    }
-
-    private Guest findGuestInResults(Guest[] guests, String confirmation) {
-        for (Guest guest : guests)
-            if (guest.getConfirmationNumber().equalsIgnoreCase(confirmation))
-                return guest;
-        return null;
     }
 
     private void roomAvailability() {
@@ -441,15 +362,13 @@ public class FrontDeskUI {
         int choice;
         do {
             System.out.println(
-                    "\n--- MANAGEMENT REPORTS ---\n1. Room Status & Occupancy Summary\n2. Filtered & Sorted Room Pricing Report\n3. Loyalty Member Segment & Stay Status Report\n0. Return");
-            System.out.print("Enter choice (0-3): ");
-            choice = readMenuChoice(0, 3);
+                    "\n--- FRONT DESK MANAGEMENT REPORTS ---\n1. Room Status & Occupancy Summary\n2. Filtered & Sorted Room Pricing Report\n0. Return");
+            System.out.print("Enter choice (0-2): ");
+            choice = readMenuChoice(0, 2);
             if (choice == 1)
                 printRoomStatusReport();
             else if (choice == 2)
                 reportRooms();
-            else if (choice == 3)
-                reportGuests();
             if (choice != 0)
                 pauseForEnter();
         } while (choice != 0);
@@ -472,30 +391,6 @@ public class FrontDeskUI {
         if (sort != 0) {
             Room[] rooms = controller.getFilteredAndSortedRoomArray(status, type, min, max, sort == 1);
             printRoomPricingReport(rooms);
-        }
-    }
-
-    private void reportGuests() {
-        String tier = readNumberedChoiceOrBack("Select Membership Tier:",
-                "Standard", "Silver", "Gold", "Platinum", "ALL");
-        if (tier == null)
-            return;
-        String status = readNumberedChoiceOrBack("Select Stay Status:",
-                "Registered", "Waiting", "Reserved", "CheckedIn", "CheckedOut", "Cancelled", "NoShow", "ALL");
-        if (status == null)
-            return;
-        System.out.print("Enter Minimum Loyalty Points Threshold: ");
-        int points = readInt();
-        while (points < 0) {
-            System.out.println("Wrong input");
-            System.out.print("Enter Minimum Loyalty Points Threshold (0 or above): ");
-            points = readInt();
-        }
-        System.out.print("Sort (1=Points Descending, 2=Guest Name Ascending, 0=Return): ");
-        int sort = readMenuChoice(0, 2);
-        if (sort != 0) {
-            Guest[] guests = controller.getFilteredAndSortedGuestArray(tier, status, points, sort == 1);
-            printGuestSegmentReport(guests);
         }
     }
 
@@ -576,10 +471,22 @@ public class FrontDeskUI {
         ConsoleTable.printRow(new String[] { "Guest Name", guest.getGuestName() }, widths);
         ConsoleTable.printRow(new String[] { "IC / Passport", guest.getIcNo() }, widths);
         ConsoleTable.printRow(new String[] { "Phone Number", guest.getPhoneNumber() }, widths);
+        ConsoleTable.printRow(new String[] { "Gender", valueOrNa(guest.getGender()) }, widths);
+        ConsoleTable.printRow(new String[] { "Nationality", valueOrNa(guest.getNationality()) }, widths);
+        ConsoleTable.printRow(new String[] { "Email", valueOrNa(guest.getEmail()) }, widths);
         ConsoleTable.printRow(new String[] { "Booking Status", guest.getBookingStatus() }, widths);
+        ConsoleTable.printRow(new String[] { "Assigned Room", valueOrNa(guest.getAssignedRoomNumber()) }, widths);
+        ConsoleTable.printRow(new String[] { "Room Type", valueOrNa(guest.getRoomType()) }, widths);
+        ConsoleTable.printRow(new String[] { "Room Rate",
+                guest.getEffectiveRoomRate() > 0 ? String.format("RM %.2f/night", guest.getEffectiveRoomRate()) : "N/A" },
+                widths);
+        ConsoleTable.printRow(new String[] { "Check-In Date", valueOrNa(guest.getCheckInDate()) }, widths);
+        ConsoleTable.printRow(new String[] { "Check-Out Date", valueOrNa(guest.getCheckOutDate()) }, widths);
+        ConsoleTable.printRow(new String[] { "Number of Nights",
+                guest.getNumberOfNights() > 0 ? guest.getNumberOfNights() + " night(s)" : "N/A" }, widths);
+        ConsoleTable.printRow(new String[] { "Special Request", valueOrNa(guest.getSpecialRequest()) }, widths);
         ConsoleTable.printRow(new String[] { "Loyalty Tier", guest.getLoyaltyTier() }, widths);
         ConsoleTable.printRow(new String[] { "Reward Points", guest.getLoyaltyPoints() + " pts" }, widths);
-        ConsoleTable.printRow(new String[] { "Assigned Room", valueOrNa(guest.getAssignedRoomNumber()) }, widths);
         ConsoleTable.printFooter(widths);
     }
 
@@ -673,22 +580,6 @@ public class FrontDeskUI {
         Guest guest = controller.searchGuestByConfirmationNumber(booking.getGuestConfirmationNumber());
         if (guest != null)
             printGuestDetails(guest);
-    }
-
-    private void printRegistrationResult(FrontDeskController.GuestRegistrationResult result, String ic) {
-        if (result.getStatus() == 1) {
-            System.out.println("Guest registered successfully. Confirmation Number was generated automatically.");
-            printGuestDetails(result.getGuest());
-        } else if (result.getStatus() == -3) {
-            Guest identity = controller.searchGuestByIC(ic);
-            System.out.println("Registration failed: This IC / Passport is already linked to Confirmation "
-                    + (identity == null ? "another guest" : identity.getConfirmationNumber()) + ".");
-        } else if (result.getStatus() == -4) {
-            System.out.println("Registration failed: No 8-digit Confirmation Number remains available.");
-        } else {
-            System.out.println(
-                    "Failed to register guest. Check required fields, phone format, and duplicate IC.");
-        }
     }
 
     private void printAllRooms() {
@@ -889,23 +780,6 @@ public class FrontDeskUI {
             double[] summary = controller.calculateRoomPriceSummary(rooms);
             System.out.printf("PRICE SUMMARY: Lowest RM %.2f | Average RM %.2f | Highest RM %.2f%n",
                     summary[0], summary[1], summary[2]);
-        }
-    }
-
-    private void printGuestSegmentReport(Guest[] guests) {
-        System.out.println("LOYALTY SEGMENT: " + guests.length + " guest(s) found");
-        int[] widths = { 18, 12, 10, 12, 8 };
-        ConsoleTable.printHeader(new String[] { "Guest Name", "Confirmation", "Tier", "Stay Status", "Points" },
-                widths);
-        for (Guest guest : guests)
-            ConsoleTable.printRow(new String[] { guest.getGuestName(), guest.getConfirmationNumber(),
-                    guest.getLoyaltyTier(), guest.getBookingStatus(), String.valueOf(guest.getLoyaltyPoints()) },
-                    widths);
-        ConsoleTable.printFooter(widths);
-        if (guests.length > 0) {
-            double[] summary = controller.calculateGuestPointSummary(guests);
-            System.out.printf("SEGMENT SUMMARY: Total Points %,d | Average %.1f points per guest%n",
-                    (int) summary[0], summary[1]);
         }
     }
 

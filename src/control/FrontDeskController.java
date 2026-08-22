@@ -26,26 +26,6 @@ public class FrontDeskController {
     private ListInterface<Booking> sharedBookingList;
     private LoyaltyController loyaltyController;
     private int syncedRoomCount = -1;
-    private int nextGuestConfirmationNumber;
-
-    /** Result of a Front Desk registration with a system-generated key. */
-    public static class GuestRegistrationResult {
-        private final int status;
-        private final Guest guest;
-
-        private GuestRegistrationResult(int status, Guest guest) {
-            this.status = status;
-            this.guest = guest;
-        }
-
-        public int getStatus() {
-            return status;
-        }
-
-        public Guest getGuest() {
-            return guest;
-        }
-    }
 
     /**
      * Billing calculation result returned to the boundary for display and checkout.
@@ -146,22 +126,10 @@ public class FrontDeskController {
         this.roomTree = new BinarySearchTree<>();
         this.sharedRoomList = sharedRoomList;
         this.sharedBookingList = (sharedBookingList != null) ? sharedBookingList : new MyArrayList<>();
-        initializeNextGuestConfirmationNumber();
         syncRoomTree();
         this.loyaltyController = (loyaltyController != null)
                 ? loyaltyController
                 : new LoyaltyController(this.guestTree);
-    }
-
-    private void initializeNextGuestConfirmationNumber() {
-        int highest = 10000000;
-        ListInterface<Guest> guests = guestTree.inOrderTraversal();
-        for (int i = 0; i < guests.getNumberOfEntries(); i++) {
-            String confirmation = guests.get(i).getConfirmationNumber();
-            if (confirmation != null && confirmation.matches("\\d{8}"))
-                highest = Math.max(highest, Integer.parseInt(confirmation));
-        }
-        nextGuestConfirmationNumber = highest + 1;
     }
 
     private void syncRoomTree() {
@@ -231,73 +199,6 @@ public class FrontDeskController {
         return result;
     }
 
-    /** Registers a guest from boundary primitives without exposing entity types. */
-    public boolean registerGuest(String name, String icNo, String phoneNumber, String confirmationNumber) {
-        return registerGuestWithStatus(name, icNo, phoneNumber, confirmationNumber) == 1;
-    }
-
-    /**
-     * Registers a guest and returns a reason code for the boundary to present.
-     * Return: 1 success, -1 invalid data, -2 duplicate confirmation,
-     * -3 duplicate IC/passport.
-     */
-    public int registerGuestWithStatus(String name, String icNo, String phoneNumber, String confirmationNumber) {
-        Guest guest = new Guest(name, icNo, phoneNumber, confirmationNumber, "Standard", 0);
-        if (guest.getConfirmationNumber() == null || !guest.getConfirmationNumber().matches("\\d{8}")
-                || isMissingRequired(guest.getGuestName()) || isMissingRequired(guest.getIcNo())
-                || !isValidOptionalPhone(guest.getPhoneNumber()))
-            return -1;
-        if (guestTree.contains(guest))
-            return -2;
-        if (searchGuestByIC(guest.getIcNo()) != null)
-            return -3;
-        return addValidatedGuest(guest) ? 1 : -1;
-    }
-
-    /**
-     * Registers a guest while keeping confirmation-number generation inside the
-     * controller. Return status: 1 success, -1 invalid data, -3 duplicate
-     * IC/passport, -4 no 8-digit confirmation number remains available.
-     */
-    public GuestRegistrationResult registerGuestWithGeneratedConfirmation(
-            String name, String icNo, String phoneNumber) {
-        if (isMissingRequired(name) || isMissingRequired(icNo) || !isValidOptionalPhone(phoneNumber))
-            return new GuestRegistrationResult(-1, null);
-        if (searchGuestByIC(icNo) != null)
-            return new GuestRegistrationResult(-3, null);
-
-        while (nextGuestConfirmationNumber <= 99999999
-                && searchGuestByConfirmationNumber(String.format("%08d", nextGuestConfirmationNumber)) != null)
-            nextGuestConfirmationNumber++;
-        if (nextGuestConfirmationNumber > 99999999)
-            return new GuestRegistrationResult(-4, null);
-
-        String confirmation = String.format("%08d", nextGuestConfirmationNumber++);
-        Guest guest = new Guest(name, icNo, phoneNumber, confirmation, "Standard", 0);
-        return addValidatedGuest(guest)
-                ? new GuestRegistrationResult(1, guest)
-                : new GuestRegistrationResult(-1, null);
-    }
-
-    // Add a new guest into the BST
-    public boolean registerGuest(Guest guest) {
-        if (guest == null || guest.getConfirmationNumber() == null
-                || !guest.getConfirmationNumber().matches("\\d{8}")
-                || isMissingRequired(guest.getGuestName()) || isMissingRequired(guest.getIcNo())
-                || !isValidOptionalPhone(guest.getPhoneNumber()))
-            return false;
-        if (guestTree.contains(guest))
-            return false;
-        Guest duplicateIdentity = searchGuestByIC(guest.getIcNo());
-        if (duplicateIdentity != null)
-            return false;
-        return addValidatedGuest(guest);
-    }
-
-    private boolean addValidatedGuest(Guest guest) {
-        return guestTree.add(guest);
-    }
-
     /**
      * Updates editable guest-profile fields while preserving the immutable BST key.
      * Return: 1 success, -1 guest missing, -2 invalid required data,
@@ -323,28 +224,53 @@ public class FrontDeskController {
         if (!isValidOptionalPhone(phone))
             return -5;
 
+        String originalIdentity = ControllerDataSupport.normalizeIdentity(guest.getIcNo());
+        ListInterface<Guest> memberProfiles = new MyArrayList<>();
+        ListInterface<Guest> allProfiles = guestTree.inOrderTraversal();
+        for (int i = 0; i < allProfiles.getNumberOfEntries(); i++) {
+            Guest profile = allProfiles.get(i);
+            if (originalIdentity.equals(ControllerDataSupport.normalizeIdentity(profile.getIcNo())))
+                memberProfiles.add(profile);
+        }
+
         if (!identityUnchanged && !loyaltyController.migrateMemberIdentity(guest, icNo.trim()))
             return -6;
 
-        guest.setGuestName(name.trim());
-        guest.setIcNo(icNo.trim());
-        guest.setPhoneNumber(normalizeOptional(phone));
-        guest.setGender(normalizeOptional(gender));
-        guest.setNationality(isBlank(nationality) ? "N/A" : nationality.trim());
-        guest.setEmail(normalizeOptional(email));
+        // Personal profile fields belong to the member identity, so keep every stay
+        // record for that IC/passport consistent. Special requests remain stay-specific.
+        for (int i = 0; i < memberProfiles.getNumberOfEntries(); i++) {
+            Guest profile = memberProfiles.get(i);
+            profile.setGuestName(name.trim());
+            profile.setIcNo(icNo.trim());
+            profile.setPhoneNumber(normalizeOptional(phone));
+            profile.setGender(normalizeOptional(gender));
+            profile.setNationality(isBlank(nationality) ? "N/A" : nationality.trim());
+            profile.setEmail(normalizeOptional(email));
+        }
         guest.setSpecialRequest(isBlank(specialRequest) || "N/A".equalsIgnoreCase(specialRequest.trim())
                 ? null
                 : specialRequest.trim());
 
-        // Booking stores display snapshots, so keep them aligned with the master guest.
+        // Booking stores display snapshots, so keep the member name aligned across
+        // stays. Only the selected stay receives its edited special request.
         for (int i = 0; i < sharedBookingList.getNumberOfEntries(); i++) {
             Booking booking = sharedBookingList.get(i);
-            if (booking != null && confirmationNumber.equalsIgnoreCase(booking.getGuestConfirmationNumber())) {
-                booking.setGuestName(guest.getGuestName());
+            if (booking == null || !containsConfirmation(memberProfiles, booking.getGuestConfirmationNumber()))
+                continue;
+            booking.setGuestName(name.trim());
+            if (confirmationNumber.equalsIgnoreCase(booking.getGuestConfirmationNumber()))
                 booking.setSpecialRequest(guest.getSpecialRequest());
-            }
         }
         return 1;
+    }
+
+    private boolean containsConfirmation(ListInterface<Guest> guests, String confirmationNumber) {
+        if (confirmationNumber == null)
+            return false;
+        for (int i = 0; i < guests.getNumberOfEntries(); i++)
+            if (confirmationNumber.equalsIgnoreCase(guests.get(i).getConfirmationNumber()))
+                return true;
+        return false;
     }
 
     public boolean updateSpecialRequest(String confirmationNumber, String specialRequest) {
@@ -377,22 +303,6 @@ public class FrontDeskController {
 
     private String normalizeOptional(String value) {
         return isBlank(value) ? "N/A" : value.trim();
-    }
-
-    // Remove a guest from the BST
-    public Guest removeGuest(String confirmNo) {
-        if (confirmNo == null || confirmNo.trim().isEmpty() || !canRemoveGuest(confirmNo))
-            return null;
-        Guest dummy = new Guest("", confirmNo.trim(), "", 0);
-        return guestTree.remove(dummy);
-    }
-
-    /** Only a newly registered profile with no booking/history may be removed. */
-    public boolean canRemoveGuest(String confirmationNumber) {
-        Guest guest = searchGuestByConfirmationNumber(confirmationNumber);
-        return guest != null
-                && "Registered".equalsIgnoreCase(guest.getBookingStatus())
-                && findBookingByConfirmation(confirmationNumber) == null;
     }
 
     private Booking findBookingByConfirmation(String confirmationNumber) {
@@ -545,22 +455,6 @@ public class FrontDeskController {
     private boolean isRoomSellableForPeriod(Room room, LocalDate start, LocalDate end) {
         return ControllerDataSupport.isRoomAvailableForStay(room, start, end,
                 sharedBookingList, guestTree.inOrderTraversal(), null);
-    }
-
-    /** Stores the intended duration of an unbooked walk-in before check-in. */
-    public int setWalkInStayLength(String confirmationNumber, int numberOfNights) {
-        Guest guest = searchGuestByConfirmationNumber(confirmationNumber);
-        if (guest == null)
-            return -1;
-        if (numberOfNights < 1 || numberOfNights > 30)
-            return -2;
-        if (findBookingByConfirmation(confirmationNumber) != null)
-            return -3;
-        if (guest.isCheckedIn() || guest.isCheckedOut() || guest.isCancelled())
-            return -4;
-        guest.setCheckInDate(LocalDate.now().toString());
-        guest.setNumberOfNights(numberOfNights);
-        return 1;
     }
 
     public boolean isGuestCheckedIn(String confirmationNumber) {
@@ -782,7 +676,7 @@ public class FrontDeskController {
                 : getWalkInBillableNights(guest);
         double rate = guest.getEffectiveRoomRate() > 0 ? guest.getEffectiveRoomRate() : room.getPrice();
         return new BillingDetails(guest, room, booking, nights, rate,
-                getDiscountPercentage(guest.getLoyaltyTier()));
+                loyaltyController.getRoomDiscountRate(guest.getLoyaltyTier()));
     }
 
     private int getWalkInBillableNights(Guest guest) {
@@ -962,8 +856,7 @@ public class FrontDeskController {
         return result;
     }
 
-    // Suggest a room upgrade - find cheapest available room that costs more than
-    // current
+    // Suggest the cheapest available room in a genuinely higher room category.
     public Room suggestRoomUpgrade(String currentRoomNo) {
         return suggestRoomUpgrade(currentRoomNo, null);
     }
@@ -993,7 +886,8 @@ public class FrontDeskController {
 
         for (int i = 0; i < allRooms.getNumberOfEntries(); i++) {
             Room r = allRooms.get(i);
-            if ("Ready for Check-In".equalsIgnoreCase(r.getRoomStatus()) && r.getPrice() > currentRoom.getPrice()
+            if ("Ready for Check-In".equalsIgnoreCase(r.getRoomStatus())
+                    && roomTypeRank(r.getRoomType()) > roomTypeRank(currentRoom.getRoomType())
                     && !hasBookingConflict(r.getRoomNumber(), LocalDate.now(), stayEnd,
                             confirmationNumber == null ? "" : confirmationNumber)) {
                 if (bestUpgrade == null || r.getPrice() < bestUpgrade.getPrice()) {
@@ -1004,20 +898,14 @@ public class FrontDeskController {
         return bestUpgrade;
     }
 
-    // Get discount percentage based on loyalty tier
-    public double getDiscountPercentage(String loyaltyTier) {
-        if (loyaltyTier == null)
-            return 0.0;
-        switch (loyaltyTier.toUpperCase()) {
-            case "PLATINUM":
-                return 0.20;
-            case "GOLD":
-                return 0.10;
-            case "SILVER":
-                return 0.05;
-            default:
-                return 0.00;
-        }
+    private int roomTypeRank(String roomType) {
+        if ("Standard Room".equalsIgnoreCase(roomType))
+            return 1;
+        if ("Deluxe Suite".equalsIgnoreCase(roomType))
+            return 2;
+        if ("Presidential Suite".equalsIgnoreCase(roomType))
+            return 3;
+        return 0;
     }
 
     // Advanced BST Diagnostic & Rebalance Methods
@@ -1104,7 +992,7 @@ public class FrontDeskController {
             Room room = searchRoomByNumber(guest.getAssignedRoomNumber());
             double rate = guest.getEffectiveRoomRate() > 0 ? guest.getEffectiveRoomRate()
                     : room != null ? room.getPrice() : 0.0;
-            totalRevenue += rate * (1.0 - getDiscountPercentage(guest.getLoyaltyTier()));
+            totalRevenue += rate * (1.0 - loyaltyController.getRoomDiscountRate(guest.getLoyaltyTier()));
         }
         return totalRevenue;
     }
@@ -1120,7 +1008,7 @@ public class FrontDeskController {
             Room room = searchRoomByNumber(guest.getAssignedRoomNumber());
             double rate = guest.getEffectiveRoomRate() > 0 ? guest.getEffectiveRoomRate()
                     : room != null ? room.getPrice() : 0.0;
-            revenue += rate * (1.0 - getDiscountPercentage(guest.getLoyaltyTier()));
+            revenue += rate * (1.0 - loyaltyController.getRoomDiscountRate(guest.getLoyaltyTier()));
             occupied++;
         }
         return occupied == 0 ? 0.0 : revenue / occupied;
@@ -1217,61 +1105,6 @@ public class FrontDeskController {
             highest = Math.max(highest, room.getPrice());
         }
         return new double[] { lowest, total / rooms.length, highest };
-    }
-
-    // Report 3: Filter guests by tier & min points, sort by points descending
-    public ListInterface<Guest> getFilteredAndSortedGuests(String tierFilter, int minPoints) {
-        return getFilteredAndSortedGuests(tierFilter, "ALL", minPoints, true);
-    }
-
-    public ListInterface<Guest> getFilteredAndSortedGuests(String tierFilter, String stayStatusFilter,
-            int minPoints, boolean sortPointsDescending) {
-        ListInterface<Guest> filtered = new MyArrayList<>();
-        ListInterface<Guest> guests = guestTree.inOrderTraversal();
-
-        for (int i = 0; i < guests.getNumberOfEntries(); i++) {
-            Guest g = guests.get(i);
-            boolean tierOk = "ALL".equalsIgnoreCase(tierFilter)
-                    || (g.getLoyaltyTier() != null && g.getLoyaltyTier().equalsIgnoreCase(tierFilter));
-            boolean statusOk = "ALL".equalsIgnoreCase(stayStatusFilter)
-                    || (g.getBookingStatus() != null && g.getBookingStatus().equalsIgnoreCase(stayStatusFilter));
-            boolean pointsOk = g.getLoyaltyPoints() >= minPoints;
-
-            if (tierOk && statusOk && pointsOk) {
-                filtered.add(g);
-            }
-        }
-
-        filtered.sort(new Comparator<Guest>() {
-            @Override
-            public int compare(Guest g1, Guest g2) {
-                return sortPointsDescending
-                        ? Integer.compare(g2.getLoyaltyPoints(), g1.getLoyaltyPoints())
-                        : g1.getGuestName().compareToIgnoreCase(g2.getGuestName());
-            }
-        });
-
-        return filtered;
-    }
-
-    public Guest[] getFilteredAndSortedGuestArray(String tierFilter, String stayStatusFilter,
-            int minPoints, boolean sortPointsDescending) {
-        ListInterface<Guest> guests = getFilteredAndSortedGuests(tierFilter, stayStatusFilter,
-                minPoints, sortPointsDescending);
-        Guest[] result = new Guest[guests.getNumberOfEntries()];
-        for (int i = 0; i < guests.getNumberOfEntries(); i++)
-            result[i] = guests.get(i);
-        return result;
-    }
-
-    /** Returns total and average points for an already-filtered result. */
-    public double[] calculateGuestPointSummary(Guest[] guests) {
-        if (guests == null || guests.length == 0)
-            return new double[] { 0.0, 0.0 };
-        int total = 0;
-        for (Guest guest : guests)
-            total += guest.getLoyaltyPoints();
-        return new double[] { total, (double) total / guests.length };
     }
 
     /**

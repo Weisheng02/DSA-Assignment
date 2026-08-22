@@ -3,6 +3,7 @@ package boundary;
 import control.LoyaltyController;
 import entity.Guest;
 import entity.LoyaltyTransaction;
+import entity.PointBatch;
 import entity.RewardItem;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
@@ -57,10 +58,10 @@ public class LoyaltyUI {
             System.out.println("1. Daily Check-In (+" + LoyaltyController.DAILY_CHECK_IN_POINTS + " pts)");
             System.out.println("2. Reward Catalog (Point Exchange)");
             System.out.println("3. Item Storage & Inventory");
-            System.out.println("4. Point Transaction & Expiry History");
+            System.out.println("4. Point Batch & Expiry History");
             System.out.println("5. Settle Pending Reward Queue");
             System.out.println("6. Restock Item Stock");
-            System.out.println("7. Member Point Activity & Expiry Audit Report");
+            System.out.println("7. Point Batch Status Report");
             System.out.println("8. Reward Item Stock & Performance Report");
             System.out.println("0. Back to Confirmation Menu");
             System.out.println("========================================================================");
@@ -78,7 +79,7 @@ public class LoyaltyUI {
                     displayInventory(scan, confirmationNumber);
                     break;
                 case 4:
-                    displayTransactionHistory(confirmationNumber);
+                    displayPointBatchHistory(confirmationNumber);
                     pauseForEnter(scan);
                     break;
                 case 5:
@@ -175,22 +176,24 @@ public class LoyaltyUI {
         }
     }
 
-    private void displayTransactionHistory(String confirmationNumber) {
-        String[] records = controller.getMemberPointHistoryRecords(confirmationNumber);
-        System.out.println("\nPOINT TRANSACTION & EXPIRY HISTORY");
-        if (records.length == 0) {
-            System.out.println("No point transactions yet.");
+    private void displayPointBatchHistory(String confirmationNumber) {
+        PointBatch[] batches = controller.getMemberPointBatches(confirmationNumber);
+        System.out.println("\nPOINT BATCH & EXPIRY HISTORY");
+        if (batches.length == 0) {
+            System.out.println("No point batches yet.");
             return;
         }
-        int[] widths = { 4, 12, 36, 19, 19, 10 };
-        ConsoleTable.printHeader(new String[] { "No.", "Points", "Description", "Earned", "Expiry", "Status" },
-                widths);
-        for (int i = 0; i < records.length; i++) {
-            String[] point = records[i].split("\\|");
-            int points = Integer.parseInt(point[0]);
+        int[] widths = { 4, 10, 10, 32, 19, 19, 10 };
+        ConsoleTable.printHeader(new String[] { "No.", "Original", "Remaining", "Description", "Earned",
+                "Expiry", "Status" }, widths);
+        for (int i = 0; i < batches.length; i++) {
+            PointBatch batch = batches[i];
             ConsoleTable.printRow(new String[] { String.valueOf(i + 1),
-                    (points >= 0 ? "+" : "-") + Math.abs(points), point[3], point[1],
-                    "-".equals(point[2]) ? "N/A" : point[2], point[5] }, widths);
+                    String.valueOf(batch.getPoints()), String.valueOf(batch.getRemainingPoints()),
+                    batch.getDescription(), batch.getEarnedTime().format(TRANSACTION_TIME_FORMAT),
+                    batch.getExpiryTime() == null ? "N/A"
+                            : batch.getExpiryTime().format(TRANSACTION_TIME_FORMAT),
+                    batch.getStatus() }, widths);
         }
         ConsoleTable.printFooter(widths);
     }
@@ -342,13 +345,12 @@ public class LoyaltyUI {
         System.out.println("1. Active");
         System.out.println("2. Consumed");
         System.out.println("3. Expired");
-        System.out.println("4. Deduction");
-        System.out.println("5. All");
-        System.out.print("Enter status number (1-5, or 0 to return): ");
-        int statusChoice = readMenuChoice(scan, 0, 5);
+        System.out.println("4. All");
+        System.out.print("Enter status number (1-4, or 0 to return): ");
+        int statusChoice = readMenuChoice(scan, 0, 4);
         if (statusChoice == 0)
             return false;
-        String[] statuses = { "ACTIVE", "CONSUMED", "EXPIRED", "DEDUCTION", "ALL" };
+        String[] statuses = { "ACTIVE", "CONSUMED", "EXPIRED", "ALL" };
         String status = statuses[statusChoice - 1];
 
         System.out.println("Confirmation filter:");
@@ -373,7 +375,7 @@ public class LoyaltyUI {
         }
         int minimumPoints;
         while (true) {
-            System.out.print("Minimum absolute point amount (0 for no minimum): ");
+            System.out.print("Minimum original point amount (0 for no minimum): ");
             minimumPoints = readIntInput(scan);
             if (minimumPoints >= 0)
                 break;
@@ -400,20 +402,22 @@ public class LoyaltyUI {
         if (sort == 0)
             return false;
         boolean ascending = sort == 1;
-        String[] report = controller.getFilteredPointReportArray(status, confirmationFilter,
+        PointBatch[] report = controller.getFilteredPointBatchReportArray(status, confirmationFilter,
                 minimumPoints, startDate, endDate, ascending);
-        System.out.println("\nPOINT ACTIVITY & EXPIRY REPORT");
+        System.out.println("\nPOINT BATCH STATUS REPORT");
         if (report.length == 0) {
             System.out.println("No matching records.");
         } else {
-            int[] widths = { 12, 8, 36, 19, 19, 10 };
-            ConsoleTable.printHeader(new String[] { "Confirm No", "Points", "Description", "Earned", "Expiry",
-                    "Status" }, widths);
-            for (String record : report) {
-                String[] point = record.split("\\|");
-                ConsoleTable.printRow(new String[] { point[4].replace("Conf: ", ""),
-                        (Integer.parseInt(point[0]) >= 0 ? "+" : "") + point[0],
-                        point[3], point[1], point[2], point[5] }, widths);
+            int[] widths = { 12, 10, 10, 32, 19, 19, 10 };
+            ConsoleTable.printHeader(new String[] { "Confirm No", "Original", "Remaining", "Description",
+                    "Earned", "Expiry", "Status" }, widths);
+            for (PointBatch batch : report) {
+                ConsoleTable.printRow(new String[] { batch.getConfirmationNumber(),
+                        String.valueOf(batch.getPoints()), String.valueOf(batch.getRemainingPoints()),
+                        batch.getDescription(), batch.getEarnedTime().format(TRANSACTION_TIME_FORMAT),
+                        batch.getExpiryTime() == null ? "N/A"
+                                : batch.getExpiryTime().format(TRANSACTION_TIME_FORMAT),
+                        batch.getStatus() }, widths);
             }
             ConsoleTable.printFooter(widths);
         }

@@ -233,14 +233,14 @@ public class HousekeepingUI {
 
     private void roomStatusSummaryReport() {
         int[] summary = controller.getRoomStatusSummary();
-        String[] sequence = controller.getStatusSequence();
+        String[] statusLabels = controller.getSummaryStatusLabels();
 
         System.out.println("\nROOM STATUS SUMMARY REPORT");
         int[] widths = { 24, 8 };
         ConsoleTable.printHeader(new String[] { "Status", "Count" }, widths);
         ConsoleTable.printRow(new String[] { "Total Rooms", String.valueOf(summary[0]) }, widths);
-        for (int i = 0; i < sequence.length; i++)
-            ConsoleTable.printRow(new String[] { sequence[i], String.valueOf(summary[i + 1]) }, widths);
+        for (int i = 0; i < statusLabels.length; i++)
+            ConsoleTable.printRow(new String[] { statusLabels[i], String.valueOf(summary[i + 1]) }, widths);
         ConsoleTable.printFooter(widths);
     }
 
@@ -276,13 +276,14 @@ public class HousekeepingUI {
             System.out.println("No matching records.");
             return;
         }
-        int[] widths = { 8, 8, 22, 22, 16, 19 };
+        int[] widths = { 8, 8, 22, 22, 16, 19, 15 };
         ConsoleTable.printHeader(new String[] { "Task ID", "Room", "Previous Status", "New Status", "Staff",
-                "Timestamp" }, widths);
+                "Timestamp", "Rollback Status" }, widths);
         for (int i = 0; i < logs.getNumberOfEntries(); i++) {
             HousekeepingLog log = logs.get(i);
             ConsoleTable.printRow(new String[] { String.valueOf(log.getTaskId()), log.getRoomNumber(),
-                    log.getPreviousStatus(), log.getNewStatus(), log.getStaffName(), log.getTimestamp() }, widths);
+                    log.getPreviousStatus(), log.getNewStatus(), log.getStaffName(), log.getTimestamp(),
+                    log.getRollbackStatus() }, widths);
         }
         ConsoleTable.printFooter(widths);
     }

@@ -3,9 +3,10 @@ package adt;
 import java.util.function.Function;
 
 /**
- * Author: Yeap Wei Sheng
+ * Author: Weisheng
  * Non-Linear Data Structure Interface: Binary Search Tree (BST)
- *
+ * Conceptual reference: BMCS2063 Chapter 9 Binary Trees lecture and practical
+ * materials. 
  * @param <T> The type of elements held in this tree, must implement Comparable.
  */
 public interface BSTInterface<T extends Comparable<T>> {

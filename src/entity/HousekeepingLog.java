@@ -21,6 +21,7 @@ public class HousekeepingLog {
     private String newStatus;
     private String staffName;
     private String timestamp;
+    private String rollbackStatus;
 
     public HousekeepingLog(String roomNumber, String previousStatus, String newStatus, String staffName) {
         this.taskId = idCounter++;
@@ -29,6 +30,7 @@ public class HousekeepingLog {
         this.newStatus = newStatus;
         this.staffName = staffName;
         this.timestamp = LocalDateTime.now().format(FORMATTER);
+        this.rollbackStatus = "Available";
     }
 
     public int getTaskId() {
@@ -53,6 +55,23 @@ public class HousekeepingLog {
 
     public String getTimestamp() {
         return timestamp;
+    }
+
+    /**
+     * Describes whether this change is still available for rollback. Keeping this
+     * state on the history record allows management reports to retain changes even
+     * after the undo stack has popped them.
+     */
+    public String getRollbackStatus() {
+        return rollbackStatus;
+    }
+
+    public void markRolledBack() {
+        rollbackStatus = "Rolled Back";
+    }
+
+    public void markInvalidated() {
+        rollbackStatus = "Invalidated";
     }
 
 }

@@ -25,12 +25,19 @@ public class HousekeepingController {
             "Dirty", "Cleaning In Progress", "Inspected", "Ready for Check-In"
     };
 
+    private static final String[] SUMMARY_STATUS_LABELS = {
+            "Dirty", "Cleaning In Progress", "Inspected", "Ready for Check-In",
+            "Reserved", "Occupied", "Maintenance", "Other"
+    };
+
     private ListInterface<Room> roomList;
-    private StackInterface<HousekeepingLog> taskLogStack;
+    private StackInterface<HousekeepingLog> undoStack;
+    private ListInterface<HousekeepingLog> taskHistory;
 
     public HousekeepingController(ListInterface<Room> sharedRoomList) {
         this.roomList = (sharedRoomList != null) ? sharedRoomList : new MyArrayList<>();
-        this.taskLogStack = new ArrayStack<>();
+        this.undoStack = new ArrayStack<>();
+        this.taskHistory = new MyArrayList<>();
     }
 
     // Linear search through the room list by room number.
@@ -96,7 +103,7 @@ public class HousekeepingController {
         String newStatus = STATUS_SEQUENCE[currentIndex + 1];
         room.setRoomStatus(newStatus);
 
-        taskLogStack.push(new HousekeepingLog(roomNumber.trim(), previousStatus, newStatus, staffName.trim()));
+        recordStatusChange(new HousekeepingLog(roomNumber.trim(), previousStatus, newStatus, staffName.trim()));
         return 1;
     }
 
@@ -125,12 +132,18 @@ public class HousekeepingController {
 
         String previousStatus = room.getRoomStatus();
         room.setRoomStatus(canonicalStatus);
-        taskLogStack.push(new HousekeepingLog(roomNumber.trim(), previousStatus, canonicalStatus, staffName.trim()));
+        recordStatusChange(
+                new HousekeepingLog(roomNumber.trim(), previousStatus, canonicalStatus, staffName.trim()));
         return 1;
     }
 
+    private void recordStatusChange(HousekeepingLog log) {
+        undoStack.push(log);
+        taskHistory.add(log);
+    }
+
     /**
-     * Instantly rolls back the most recent status change by popping the task-log
+     * Instantly rolls back the most recent status change by popping the undo
      * stack
      * and restoring the affected room's previous status.
      * A log can only be safely reversed while the room still has the status
@@ -142,13 +155,14 @@ public class HousekeepingController {
      *         -2 room was changed externally / rollback is unsafe
      */
     public int rollbackLastChange() {
-        if (taskLogStack.isEmpty())
+        if (undoStack.isEmpty())
             return 0;
 
-        HousekeepingLog lastLog = taskLogStack.peek();
+        HousekeepingLog lastLog = undoStack.peek();
         Room room = findRoomByNumber(lastLog.getRoomNumber());
         if (room == null) {
-            taskLogStack.pop();
+            undoStack.pop();
+            lastLog.markInvalidated();
             return -1;
         }
 
@@ -156,33 +170,46 @@ public class HousekeepingController {
             // The log is stale because another module changed the room after this
             // housekeeping action. Discard it so one unsafe entry cannot block all
             // older rollback records forever.
-            taskLogStack.pop();
+            undoStack.pop();
+            lastLog.markInvalidated();
             return -2;
         }
 
-        taskLogStack.pop();
+        undoStack.pop();
         room.setRoomStatus(lastLog.getPreviousStatus());
+        lastLog.markRolledBack();
         return 1;
     }
 
     public HousekeepingLog peekLastChange() {
-        return taskLogStack.isEmpty() ? null : taskLogStack.peek();
+        return undoStack.isEmpty() ? null : undoStack.peek();
     }
 
     public int getLoggedTaskCount() {
-        return taskLogStack.getNumberOfEntries();
+        return taskHistory.getNumberOfEntries();
     }
 
     // ---------------- Reports ----------------
 
-    // Report 1: Count of rooms currently at each housekeeping stage.
+    public String[] getSummaryStatusLabels() {
+        return SUMMARY_STATUS_LABELS.clone();
+    }
+
+    // Report 1: Count all rooms by status so the category totals reconcile with
+    // the overall room count. Unrecognised future statuses are grouped as Other.
     public int[] getRoomStatusSummary() {
-        int[] summary = new int[STATUS_SEQUENCE.length + 1]; // [0]=total, [1..4]=each stage
+        int[] summary = new int[SUMMARY_STATUS_LABELS.length + 1];
         summary[0] = roomList.getNumberOfEntries();
         for (int i = 0; i < roomList.getNumberOfEntries(); i++) {
-            int idx = getStatusIndex(roomList.get(i).getRoomStatus());
-            if (idx != -1)
-                summary[idx + 1]++;
+            String roomStatus = roomList.get(i).getRoomStatus();
+            int summaryIndex = SUMMARY_STATUS_LABELS.length; // Other
+            for (int j = 0; j < SUMMARY_STATUS_LABELS.length - 1; j++) {
+                if (sameStatus(roomStatus, SUMMARY_STATUS_LABELS[j])) {
+                    summaryIndex = j + 1;
+                    break;
+                }
+            }
+            summary[summaryIndex]++;
         }
         return summary;
     }
@@ -192,10 +219,8 @@ public class HousekeepingController {
     public ListInterface<HousekeepingLog> getFilteredTaskLog(String roomNumberFilter, String statusFilter,
             boolean newestFirst) {
         ListInterface<HousekeepingLog> filtered = new MyArrayList<>();
-        ListInterface<HousekeepingLog> allLogs = taskLogStack.toList();
-
-        for (int i = 0; i < allLogs.getNumberOfEntries(); i++) {
-            HousekeepingLog log = allLogs.get(i);
+        for (int i = 0; i < taskHistory.getNumberOfEntries(); i++) {
+            HousekeepingLog log = taskHistory.get(i);
             boolean roomMatch = "ALL".equalsIgnoreCase(roomNumberFilter)
                     || log.getRoomNumber().equalsIgnoreCase(roomNumberFilter);
             boolean statusMatch = "ALL".equalsIgnoreCase(statusFilter)

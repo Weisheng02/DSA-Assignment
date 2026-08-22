@@ -14,7 +14,6 @@ import entity.RewardItem;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 
 /**
  * Author: Tan Hock Siang
@@ -27,10 +26,7 @@ public class LoyaltyController {
     // Reward costs start at 20 points and tier thresholds are 200/500/1200 EXP.
     // Fifty points is meaningful without allowing one daily claim to skip tiers.
     public static final int DAILY_CHECK_IN_POINTS = 50;
-    private static final DateTimeFormatter BATCH_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
-
-    // Source-of-truth loyalty ledger supplied by the Loyalty module owner.
-    private ListInterface<String> pointHistory = new MyArrayList<>();
+    // Source of truth for earned points, remaining balances and expiry states.
     private ListInterface<PointBatch> pointBatches = new MyArrayList<>();
     private ListInterface<LoyaltyTransaction> redemptionHistory = new MyArrayList<>();
     private ListInterface<String> dailyClaimRecords = new MyArrayList<>();
@@ -108,10 +104,6 @@ public class LoyaltyController {
             PointBatch batch = new PointBatch(guest.getLoyaltyPoints(), "Opening Balance",
                     guest.getConfirmationNumber(), key, OPENING_BALANCE_VALIDITY_MINUTES);
             pointBatches.add(batch);
-            pointHistory.add(String.format("%d|%s|%s|%s|Conf: %s|ACTIVE|%s",
-                    batch.getPoints(), batch.getEarnedTime().format(BATCH_FMT),
-                    batch.getExpiryTime().format(BATCH_FMT), batch.getDescription(),
-                    batch.getConfirmationNumber(), batch.getBatchId()));
         }
     }
 
@@ -146,15 +138,29 @@ public class LoyaltyController {
         return findGuest(confirmationNumber) != null;
     }
 
+    /** Loyalty-owned room discount policy used by Front Desk billing. */
+    public double getRoomDiscountRate(String loyaltyTier) {
+        if (loyaltyTier == null)
+            return 0.0;
+        switch (loyaltyTier.trim().toUpperCase()) {
+            case "PLATINUM":
+                return 0.20;
+            case "GOLD":
+                return 0.10;
+            case "SILVER":
+                return 0.05;
+            default:
+                return 0.0;
+        }
+    }
+
     /** Compatibility validation for the existing Front Desk checkout flow. */
     public AwardResult validateCheckoutAward(String confirmationNumber,
             String sourceReference, int points) {
         return new AwardResult(findGuest(confirmationNumber) != null && points >= 0, 0);
     }
 
-    /**
-     * Sends a successful Front Desk checkout into the supplied point-history flow.
-     */
+    /** Adds a successful Front Desk checkout reward as a new point batch. */
     public AwardResult awardCheckoutPoints(String confirmationNumber,
             String sourceReference, int points) {
         Guest guest = findGuest(confirmationNumber);
@@ -285,23 +291,7 @@ public class LoyaltyController {
                 continue;
             int consumed = batch.consume(remaining);
             remaining -= consumed;
-            if (consumed > 0 && "CONSUMED".equalsIgnoreCase(batch.getStatus()))
-                updatePointHistoryBatchStatus(batch.getBatchId(), "CONSUMED");
         }
-    }
-
-    private void updatePointHistoryBatchStatus(String batchId, String status) {
-        ListInterface<String> updated = new MyArrayList<>();
-        for (int i = 0; i < pointHistory.getNumberOfEntries(); i++) {
-            String record = pointHistory.get(i);
-            String[] fields = record.split("\\|");
-            if (fields.length >= 7 && fields[6].equals(batchId)) {
-                record = String.format("%s|%s|%s|%s|%s|%s|%s",
-                        fields[0], fields[1], fields[2], fields[3], fields[4], status, fields[6]);
-            }
-            updated.add(record);
-        }
-        pointHistory = updated;
     }
 
     public void recordPointTransaction(Guest guest, String desc, int pts) {
@@ -320,20 +310,10 @@ public class LoyaltyController {
         if (actualPoints > 0)
             guest.setLoyaltyExperiences(guest.getLoyaltyExperiences() + actualPoints);
 
-        LocalDateTime now = LocalDateTime.now();
         if (actualPoints > 0) {
             PointBatch batch = new PointBatch(actualPoints, desc, guest.getConfirmationNumber(),
                     memberKey(guest), validityMinutes);
             pointBatches.add(batch);
-            String expiryText = batch.getExpiryTime() == null
-                    ? "N/A" : batch.getExpiryTime().format(BATCH_FMT);
-            pointHistory.add(String.format("%d|%s|%s|%s|Conf: %s|ACTIVE|%s",
-                    actualPoints, batch.getEarnedTime().format(BATCH_FMT),
-                    expiryText, desc,
-                    guest.getConfirmationNumber(), batch.getBatchId()));
-        } else {
-            pointHistory.add(String.format("%d|%s|-|%s|Conf: %s|DEDUCTION|-",
-                    actualPoints, now.format(BATCH_FMT), desc, guest.getConfirmationNumber()));
         }
         synchronizeMemberProfiles(guest);
     }
@@ -351,9 +331,6 @@ public class LoyaltyController {
             int expired = batch.expire(now);
             if (expired > 0) {
                 expiredTotal += expired;
-                updatePointHistoryBatchStatus(batch.getBatchId(), "EXPIRED");
-                pointHistory.add(String.format("-%d|%s|-|%s (Expired unused balance)|Conf: %s|DEDUCTION|-",
-                        expired, now.format(BATCH_FMT), batch.getDescription(), batch.getConfirmationNumber()));
             }
         }
         if (expiredTotal > 0) {
@@ -388,21 +365,21 @@ public class LoyaltyController {
         return claimDailyCheckIn(findGuest(confirmationNumber));
     }
 
-    /** Returns newest-first raw point-ledger records for one loyalty member. */
-    public String[] getMemberPointHistoryRecords(String confirmationNumber) {
+    /** Returns newest-first point batches for one loyalty member. */
+    public PointBatch[] getMemberPointBatches(String confirmationNumber) {
         Guest guest = findGuest(confirmationNumber);
         if (guest == null)
-            return new String[0];
+            return new PointBatch[0];
         checkExpiredPoints(guest);
-        ListInterface<String> records = new MyArrayList<>();
-        int len = pointHistory.getNumberOfEntries();
+        ListInterface<PointBatch> records = new MyArrayList<>();
+        int len = pointBatches.getNumberOfEntries();
+        String key = memberKey(guest);
         for (int i = len - 1; i >= 0; i--) {
-            String[] point = pointHistory.get(i).split("\\|");
-            String confirmation = point.length >= 5 ? point[4].replace("Conf: ", "").trim() : "";
-            if (point.length >= 6 && confirmationBelongsToMember(guest, confirmation))
-                records.add(pointHistory.get(i));
+            PointBatch batch = pointBatches.get(i);
+            if (key.equals(batch.getMemberKey()))
+                records.add(batch);
         }
-        String[] result = new String[records.getNumberOfEntries()];
+        PointBatch[] result = new PointBatch[records.getNumberOfEntries()];
         for (int i = 0; i < result.length; i++)
             result[i] = records.get(i);
         return result;
@@ -652,25 +629,25 @@ public class LoyaltyController {
         return result;
     }
 
-    public ListInterface<String> getFilteredPointReport(String status, boolean ascending) {
-        return getFilteredPointReport(status, "ALL", 0, ascending);
+    public ListInterface<PointBatch> getFilteredPointBatchReport(String status, boolean ascending) {
+        return getFilteredPointBatchReport(status, "ALL", 0, ascending);
     }
 
-    /** Multi-criteria point audit: status, stay confirmation and point amount. */
-    public ListInterface<String> getFilteredPointReport(String status, String confirmationFilter,
+    /** Multi-criteria point-batch audit: status, stay confirmation and point amount. */
+    public ListInterface<PointBatch> getFilteredPointBatchReport(String status, String confirmationFilter,
             int minimumAbsolutePoints, boolean ascending) {
-        return getFilteredPointReport(status, confirmationFilter, minimumAbsolutePoints,
+        return getFilteredPointBatchReport(status, confirmationFilter, minimumAbsolutePoints,
                 "ALL", "ALL", ascending);
     }
 
     /**
-     * Multi-criteria point audit: status, stay confirmation, point amount and
+     * Multi-criteria point-batch audit: status, stay confirmation, point amount and
      * inclusive earned-date range.
      */
-    public ListInterface<String> getFilteredPointReport(String status, String confirmationFilter,
+    public ListInterface<PointBatch> getFilteredPointBatchReport(String status, String confirmationFilter,
             int minimumAbsolutePoints, String earnedStartDate, String earnedEndDate,
             boolean ascending) {
-        ListInterface<String> result = new MyArrayList<>();
+        ListInterface<PointBatch> result = new MyArrayList<>();
         LocalDate start = parseOptionalReportDate(earnedStartDate);
         LocalDate end = parseOptionalReportDate(earnedEndDate);
         if (isInvalidOptionalReportDate(earnedStartDate, start)
@@ -683,26 +660,27 @@ public class LoyaltyController {
                 checkExpiredPoints(guests.get(i));
         }
 
-        for (int i = 0; i < pointHistory.getNumberOfEntries(); i++) {
-            String[] point = pointHistory.get(i).split("\\|");
-            String confirmation = point.length >= 5 ? point[4].replace("Conf: ", "").trim() : "";
-            boolean statusMatches = point.length >= 6
-                    && ("ALL".equalsIgnoreCase(status) || point[5].equalsIgnoreCase(status));
+        for (int i = 0; i < pointBatches.getNumberOfEntries(); i++) {
+            PointBatch batch = pointBatches.get(i);
+            String confirmation = batch.getConfirmationNumber();
+            boolean statusMatches = "ALL".equalsIgnoreCase(status)
+                    || batch.getStatus().equalsIgnoreCase(status);
             boolean confirmationMatches = confirmationFilter == null
                     || confirmationFilter.trim().isEmpty()
                     || "ALL".equalsIgnoreCase(confirmationFilter)
                     || confirmation.equalsIgnoreCase(confirmationFilter.trim());
-            boolean pointsMatch = point.length >= 1
-                    && Math.abs(Integer.parseInt(point[0])) >= Math.max(0, minimumAbsolutePoints);
-            boolean earnedDateMatches = matchesEarnedDateRange(point, start, end);
+            boolean pointsMatch = batch.getPoints() >= Math.max(0, minimumAbsolutePoints);
+            LocalDate earnedDate = batch.getEarnedTime().toLocalDate();
+            boolean earnedDateMatches = (start == null || !earnedDate.isBefore(start))
+                    && (end == null || !earnedDate.isAfter(end));
             if (statusMatches && confirmationMatches && pointsMatch && earnedDateMatches) {
-                result.add(pointHistory.get(i));
+                result.add(batch);
             }
         }
 
         result.sort((a, b) -> {
-            int x = Integer.parseInt(a.split("\\|")[0]), y = Integer.parseInt(b.split("\\|")[0]);
-            return ascending ? Integer.compare(x, y) : Integer.compare(y, x);
+            return ascending ? Integer.compare(a.getPoints(), b.getPoints())
+                    : Integer.compare(b.getPoints(), a.getPoints());
         });
         return result;
     }
@@ -722,35 +700,23 @@ public class LoyaltyController {
                 && parsedDate == null;
     }
 
-    private boolean matchesEarnedDateRange(String[] point, LocalDate start, LocalDate end) {
-        if (point.length < 2)
-            return false;
-        try {
-            LocalDate earnedDate = LocalDateTime.parse(point[1], BATCH_FMT).toLocalDate();
-            return (start == null || !earnedDate.isBefore(start))
-                    && (end == null || !earnedDate.isAfter(end));
-        } catch (java.time.format.DateTimeParseException ignored) {
-            return false;
-        }
+    /** Returns the filtered point-batch report without exposing the internal List ADT. */
+    public PointBatch[] getFilteredPointBatchReportArray(String status, boolean ascending) {
+        return getFilteredPointBatchReportArray(status, "ALL", 0, ascending);
     }
 
-    /** Returns the filtered point report without exposing the internal List ADT. */
-    public String[] getFilteredPointReportArray(String status, boolean ascending) {
-        return getFilteredPointReportArray(status, "ALL", 0, ascending);
-    }
-
-    public String[] getFilteredPointReportArray(String status, String confirmationFilter,
+    public PointBatch[] getFilteredPointBatchReportArray(String status, String confirmationFilter,
             int minimumAbsolutePoints, boolean ascending) {
-        return getFilteredPointReportArray(status, confirmationFilter, minimumAbsolutePoints,
+        return getFilteredPointBatchReportArray(status, confirmationFilter, minimumAbsolutePoints,
                 "ALL", "ALL", ascending);
     }
 
-    public String[] getFilteredPointReportArray(String status, String confirmationFilter,
+    public PointBatch[] getFilteredPointBatchReportArray(String status, String confirmationFilter,
             int minimumAbsolutePoints, String earnedStartDate, String earnedEndDate,
             boolean ascending) {
-        ListInterface<String> report = getFilteredPointReport(status, confirmationFilter,
+        ListInterface<PointBatch> report = getFilteredPointBatchReport(status, confirmationFilter,
                 minimumAbsolutePoints, earnedStartDate, earnedEndDate, ascending);
-        String[] result = new String[report.getNumberOfEntries()];
+        PointBatch[] result = new PointBatch[report.getNumberOfEntries()];
         for (int i = 0; i < result.length; i++)
             result[i] = report.get(i);
         return result;

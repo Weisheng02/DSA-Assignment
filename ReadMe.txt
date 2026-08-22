@@ -9,15 +9,15 @@ NetBeans IDE
 How to Run in NetBeans
 ----------------------
 1. Create or open a Java project in NetBeans.
-2. Add all files and folders inside the src folder to the project's Source Packages.
+2. Add all files and folders inside the Source Packages Folder.
 3. Run App.java.
 
 Modules
 -------
-1. Walk-In Registrations and Standard Booking
-2. Housekeeping and Task Log
-3. Front-Desk Service
-4. Loyalty and Rewards Service
+1. Walk-In Registrations and Standard Booking (Zhi Xuan)
+2. Housekeeping and Task Log (Kai Wei)
+3. Front-Desk Service (Wei Sheng)
+4. Loyalty and Rewards Service (Hock Siang)
 
 Notes
 -----
