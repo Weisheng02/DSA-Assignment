@@ -209,23 +209,46 @@ public class FrontDeskUI {
         System.out.print("Room Number (press Enter for assigned room): ");
         String room = scanner.nextLine().trim();
         String selectedRoom = room.isEmpty() ? guest.getAssignedRoomNumber() : room;
-        Room upgrade = controller.suggestRoomUpgrade(selectedRoom, confirmation);
+        boolean manualRoomSelection = guest.getAssignedRoomNumber() != null && selectedRoom != null
+                && !guest.getAssignedRoomNumber().equalsIgnoreCase(selectedRoom);
+        boolean complimentaryUpgradeAccepted = false;
+
+        if (manualRoomSelection) {
+            Room manuallySelectedRoom = controller.searchRoomByNumber(selectedRoom);
+            if (manuallySelectedRoom != null) {
+                printOperationSummary("MANUAL ROOM SELECTION",
+                        new String[] { "Selected Room", "Room Type", "Published Rate", "Pricing Rule" },
+                        new String[] { manuallySelectedRoom.getRoomNumber(), manuallySelectedRoom.getRoomType(),
+                                String.format("RM %.2f/night", manuallySelectedRoom.getPrice()),
+                                "Selected room rate applies" });
+                String confirmRoomChange = readYesNoOrBack(
+                        "Confirm manual room selection at the published rate? (Y/N, 0 to return): ");
+                if (!"Y".equals(confirmRoomChange))
+                    return;
+            }
+        }
+
+        Room upgrade = manualRoomSelection ? null
+                : controller.suggestRoomUpgrade(guest.getAssignedRoomNumber(), confirmation);
         if (upgrade != null) {
             printOperationSummary("COMPLIMENTARY ROOM UPGRADE AVAILABLE",
                     new String[] { "Upgrade Room", "Room Type", "Published Rate", "Guest Charged Rate" },
                     new String[] { upgrade.getRoomNumber(), upgrade.getRoomType(),
                             String.format("RM %.2f/night", upgrade.getPrice()),
                             String.format("RM %.2f/night (original rate)",
-                                    controller.getCheckInRate(confirmation, selectedRoom)) });
-            String upgradeChoice = readYesNoOrBack("Accept complementary upgrade? (Y/N, 0 to return): ");
+                                    controller.getCheckInRate(confirmation, guest.getAssignedRoomNumber())) });
+            String upgradeChoice = readYesNoOrBack("Accept complimentary upgrade? (Y/N, 0 to return): ");
             if (upgradeChoice == null)
                 return;
-            if ("Y".equals(upgradeChoice))
+            if ("Y".equals(upgradeChoice)) {
                 selectedRoom = upgrade.getRoomNumber();
+                complimentaryUpgradeAccepted = true;
+            }
         }
         System.out.print("Any Special Request? (Enter request or press Enter to skip): ");
         String request = scanner.nextLine().trim();
-        int result = controller.processCheckIn(confirmation, selectedRoom, request);
+        int result = controller.processCheckIn(confirmation, selectedRoom, request,
+                complimentaryUpgradeAccepted);
         if (result != 1) {
             System.out.println(checkInError(result, confirmation, selectedRoom));
             return;
@@ -234,11 +257,12 @@ public class FrontDeskUI {
         Room occupiedRoom = controller.searchRoomByNumber(selectedRoom);
         printOperationSummary("CHECK-IN SUCCESSFUL",
                 new String[] { "Guest", "Confirmation No", "Room / Type", "Room Status", "Actual Check-In",
-                        "Booked Duration" },
+                        "Booked Duration", "Charged Rate" },
                 new String[] { updated.getGuestName(), updated.getConfirmationNumber(),
                         selectedRoom + " / " + (occupiedRoom == null ? "Unknown" : occupiedRoom.getRoomType()),
                         occupiedRoom == null ? "Occupied" : occupiedRoom.getRoomStatus(), updated.getCheckInDate(),
-                        updated.getNumberOfNights() + " night(s)" });
+                        updated.getNumberOfNights() + " night(s)",
+                        String.format("RM %.2f/night", updated.getEffectiveRoomRate()) });
     }
 
     private void roomTransfer() {
@@ -286,7 +310,7 @@ public class FrontDeskUI {
                 new String[] { guest.getGuestName(), guest.getConfirmationNumber(), oldRoom, "Dirty",
                         room + " / " + (newRoom == null ? "Unknown" : newRoom.getRoomType()),
                         newRoom == null ? "Occupied" : newRoom.getRoomStatus(),
-                        String.format("RM %.2f/night (original rate preserved)", guest.getRoomRate()) });
+                        String.format("RM %.2f/night (new room rate)", guest.getRoomRate()) });
     }
 
     private void extendStay() {
@@ -736,10 +760,12 @@ public class FrontDeskUI {
     private void printTransferRooms(Room[] rooms) {
         if (rooms.length == 0)
             return;
-        int[] widths = { 10, 24, 22 };
-        ConsoleTable.printHeader(new String[] { "Room No", "Room Type", "Status" }, widths);
+        int[] widths = { 10, 24, 22, 18 };
+        ConsoleTable.printHeader(new String[] { "Room No", "Room Type", "Status", "Rate / Night" }, widths);
         for (Room room : rooms)
-            ConsoleTable.printRow(new String[] { room.getRoomNumber(), room.getRoomType(), room.getRoomStatus() },
+            ConsoleTable.printRow(
+                    new String[] { room.getRoomNumber(), room.getRoomType(), room.getRoomStatus(),
+                            String.format("RM %.2f", room.getPrice()) },
                     widths);
         ConsoleTable.printFooter(widths);
     }

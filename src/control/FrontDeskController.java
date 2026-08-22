@@ -470,19 +470,50 @@ public class FrontDeskController {
         Guest guest = searchGuestByConfirmationNumber(confirmationNumber);
         String selectedRoom = isBlank(roomNumber) && guest != null
                 ? guest.getAssignedRoomNumber() : roomNumber;
-        Room r = searchRoomByNumber(selectedRoom);
-        double price = guest != null && guest.getEffectiveRoomRate() > 0
-                ? guest.getEffectiveRoomRate()
-                : (r != null ? r.getPrice() : 0.0);
+        double price = resolveCheckInRate(guest, selectedRoom, false);
         return processCheckIn(confirmationNumber, selectedRoom, price);
     }
 
     /** Completes the check-in and stores its request as one controller workflow. */
     public int processCheckIn(String confirmationNumber, String roomNumber, String specialRequest) {
-        int result = processCheckIn(confirmationNumber, roomNumber);
+        return processCheckIn(confirmationNumber, roomNumber, specialRequest, false);
+    }
+
+    /**
+     * Completes check-in with an explicitly accepted system-suggested upgrade.
+     * Manually selecting another room never inherits the booked rate.
+     */
+    public int processCheckIn(String confirmationNumber, String roomNumber, String specialRequest,
+            boolean complimentaryUpgradeAccepted) {
+        Guest guest = searchGuestByConfirmationNumber(confirmationNumber);
+        String selectedRoom = isBlank(roomNumber) && guest != null
+                ? guest.getAssignedRoomNumber() : roomNumber;
+        double price = resolveCheckInRate(guest, selectedRoom, complimentaryUpgradeAccepted);
+        int result = processCheckIn(confirmationNumber, selectedRoom, price);
         if (result == 1 && !isBlank(specialRequest))
             updateSpecialRequest(confirmationNumber, specialRequest);
         return result;
+    }
+
+    private double resolveCheckInRate(Guest guest, String selectedRoomNumber,
+            boolean complimentaryUpgradeAccepted) {
+        Room selectedRoom = searchRoomByNumber(selectedRoomNumber);
+        if (guest == null)
+            return selectedRoom == null ? 0.0 : selectedRoom.getPrice();
+
+        String assignedRoomNumber = guest.getAssignedRoomNumber();
+        boolean assignedRoomSelected = assignedRoomNumber != null && selectedRoomNumber != null
+                && assignedRoomNumber.equalsIgnoreCase(selectedRoomNumber.trim());
+        boolean validComplimentaryUpgrade = false;
+        if (complimentaryUpgradeAccepted && assignedRoomNumber != null && selectedRoom != null) {
+            Room offeredUpgrade = suggestRoomUpgrade(assignedRoomNumber, guest.getConfirmationNumber());
+            validComplimentaryUpgrade = offeredUpgrade != null
+                    && offeredUpgrade.getRoomNumber().equalsIgnoreCase(selectedRoom.getRoomNumber());
+        }
+
+        if ((assignedRoomSelected || validComplimentaryUpgrade) && guest.getEffectiveRoomRate() > 0)
+            return guest.getEffectiveRoomRate();
+        return selectedRoom == null ? 0.0 : selectedRoom.getPrice();
     }
 
     /** Returns the rate that must be preserved when this guest checks in. */
@@ -759,7 +790,9 @@ public class FrontDeskController {
     /**
      * Process Room Transfer (Change Room mid-stay):
      * Releases old room to "Dirty" for Housekeeping, sets new room to "Occupied",
-     * and updates guest's assigned room and effective rate.
+     * and updates the guest's assigned room and effective rate. A complimentary
+     * check-in upgrade preserves the booked rate only for that upgrade; a later
+     * guest-requested room transfer adopts the newly selected room's rate.
      * 
      * @return 1: success, -1: guest not found, -2: guest not checked-in, -3: new
      *         room not found, -4: new room not ready, -5: same room selected
@@ -807,16 +840,17 @@ public class FrontDeskController {
             }
         }
 
-        // Occupy new room and update guest details (preserve original rate for upgrade
-        // benefit)
+        // A transfer made after check-in is a new room choice, so its published rate
+        // replaces any booked or complimentary-upgrade rate previously preserved.
         newRoom.setRoomStatus("Occupied");
         guest.setAssignedRoomNumber(newRoomNumber.trim());
         guest.setRoomType(newRoom.getRoomType());
+        guest.setEffectiveRoomRate(newRoom.getPrice());
         if (booking != null) {
             booking.setRoomNumber(newRoom.getRoomNumber());
             booking.setRoomType(newRoom.getRoomType());
+            booking.setRoomPrice(newRoom.getPrice());
         }
-        // Do NOT overwrite effectiveRoomRate — preserve original/upgrade pricing
 
         return 1;
     }
@@ -857,12 +891,18 @@ public class FrontDeskController {
     }
 
     // Suggest the cheapest available room in a genuinely higher room category.
+    // Complimentary upgrades are a Gold/Platinum membership benefit.
     public Room suggestRoomUpgrade(String currentRoomNo) {
         return suggestRoomUpgrade(currentRoomNo, null);
     }
 
     public Room suggestRoomUpgrade(String currentRoomNo, String confirmationNumber) {
         syncRoomTree();
+        Guest guest = confirmationNumber == null ? null
+                : searchGuestByConfirmationNumber(confirmationNumber);
+        if (!isComplimentaryUpgradeEligible(guest))
+            return null;
+
         Room currentRoom = searchRoomByNumber(currentRoomNo);
         if (currentRoom == null)
             return null;
@@ -874,11 +914,8 @@ public class FrontDeskController {
         try {
             if (booking != null) {
                 stayEnd = LocalDate.parse(booking.getCheckOutDate());
-            } else if (confirmationNumber != null) {
-                Guest guest = searchGuestByConfirmationNumber(confirmationNumber);
-                if (guest != null) {
-                    stayEnd = LocalDate.now().plusDays(Math.max(1, guest.getNumberOfNights()));
-                }
+            } else {
+                stayEnd = LocalDate.now().plusDays(Math.max(1, guest.getNumberOfNights()));
             }
         } catch (Exception ignored) {
             return null;
@@ -896,6 +933,13 @@ public class FrontDeskController {
             }
         }
         return bestUpgrade;
+    }
+
+    private boolean isComplimentaryUpgradeEligible(Guest guest) {
+        if (guest == null || guest.getLoyaltyTier() == null)
+            return false;
+        String tier = guest.getLoyaltyTier().trim();
+        return "Gold".equalsIgnoreCase(tier) || "Platinum".equalsIgnoreCase(tier);
     }
 
     private int roomTypeRank(String roomType) {
